@@ -108,14 +108,17 @@ export default async function HomePage() {
   const { mon: nextMon, sun: nextSun } = nextMondaySunday()
   const weekDays = getWeekDays()
 
-  const [mathiasActs, mathiasEventsWeek, mathiasEventsNext, karolineActs, karolineEventsWeek, karolineEventsNext] =
+  const [mathiasActs, mathiasEventsWeek, mathiasEventsNext, mathiasWeekActs,
+         karolineActs, karolineEventsWeek, karolineEventsNext, karolineWeekActs] =
     await Promise.all([
       getActivities(dateStr(-42), today),
       getEvents(weekDays[0], thisSun),
       getEvents(nextMon, nextSun),
+      getActivities(weekDays[0], today),
       fetchForAthlete(KAROLINE.id, KAROLINE.apiKey, `/athlete/${KAROLINE.id}/activities`, { oldest: dateStr(-42), newest: today }),
       fetchForAthlete(KAROLINE.id, KAROLINE.apiKey, `/athlete/${KAROLINE.id}/events`, { oldest: weekDays[0], newest: thisSun }),
       fetchForAthlete(KAROLINE.id, KAROLINE.apiKey, `/athlete/${KAROLINE.id}/events`, { oldest: nextMon, newest: nextSun }),
+      fetchForAthlete(KAROLINE.id, KAROLINE.apiKey, `/athlete/${KAROLINE.id}/activities`, { oldest: weekDays[0], newest: today }),
     ])
 
   // Fitness
@@ -149,17 +152,38 @@ export default async function HomePage() {
   const kNextEvent = karolineEventsWeek.find((e: EventItem) => !e.paired_activity_id && e.start_date_local >= today)
     ?? karolineEventsNext[0]
 
-  // Bygg uke-kart: dato → {mathias: events[], karoline: events[]}
-  const weekMap = new Map<string, { mathias: EventItem[]; karoline: EventItem[] }>()
+  // Bygg uke-kart: kombiner events (planlagte) og activities (gjennomførte)
+  // Activities som allerede er paired med et event vises ikke dobbelt
+  type CalItem = { id: number | string; type: string; name: string; moving_time: number; icu_training_load: number; done: boolean }
+  const weekMap = new Map<string, { mathias: CalItem[]; karoline: CalItem[] }>()
   for (const d of weekDays) weekMap.set(d, { mathias: [], karoline: [] })
 
+  // Samle paired activity IDs fra events (for å unngå dobbel-visning)
+  const mPairedIds = new Set((mathiasEventsWeek as EventItem[]).map(e => e.paired_activity_id).filter(Boolean))
+  const kPairedIds = new Set((karolineEventsWeek as EventItem[]).map(e => e.paired_activity_id).filter(Boolean))
+
+  // Mathias events
   for (const e of mathiasEventsWeek as EventItem[]) {
     const d = e.start_date_local.split('T')[0]
-    if (weekMap.has(d)) weekMap.get(d)!.mathias.push(e)
+    if (weekMap.has(d)) weekMap.get(d)!.mathias.push({ id: e.id, type: e.type, name: e.name, moving_time: e.moving_time, icu_training_load: e.icu_training_load, done: !!e.paired_activity_id })
   }
+  // Mathias activities som IKKE er paired (dvs. ikke allerede vist via event)
+  for (const a of (mathiasWeekActs as unknown as EventItem[])) {
+    if (mPairedIds.has(String(a.id))) continue
+    const d = a.start_date_local.split('T')[0]
+    if (weekMap.has(d)) weekMap.get(d)!.mathias.push({ id: a.id, type: a.type, name: a.name, moving_time: a.moving_time, icu_training_load: a.icu_training_load, done: true })
+  }
+
+  // Karoline events
   for (const e of karolineEventsWeek as EventItem[]) {
     const d = e.start_date_local.split('T')[0]
-    if (weekMap.has(d)) weekMap.get(d)!.karoline.push(e)
+    if (weekMap.has(d)) weekMap.get(d)!.karoline.push({ id: e.id, type: e.type, name: e.name, moving_time: e.moving_time, icu_training_load: e.icu_training_load, done: !!e.paired_activity_id })
+  }
+  // Karoline activities som ikke er paired
+  for (const a of (karolineWeekActs as unknown as EventItem[])) {
+    if (kPairedIds.has(String(a.id))) continue
+    const d = a.start_date_local.split('T')[0]
+    if (weekMap.has(d)) weekMap.get(d)!.karoline.push({ id: a.id, type: a.type, name: a.name, moving_time: a.moving_time, icu_training_load: a.icu_training_load, done: true })
   }
 
   const daysLeft = daysUntil('2026-08-08')
@@ -329,7 +353,9 @@ export default async function HomePage() {
                 </div>
 
                 {(() => {
-                  const todays = karolineEventsWeek.filter((e: EventItem) => e.start_date_local.startsWith(today))
+                  const todayEvents = karolineEventsWeek.filter((e: EventItem) => e.start_date_local.startsWith(today))
+                  const todayActs = (karolineWeekActs as unknown as EventItem[]).filter(a => a.start_date_local.startsWith(today) && !kPairedIds.has(String(a.id)))
+                  const todays = [...todayEvents, ...todayActs]
                   if (todays.length === 0) return <p className="text-sm text-stone-400 py-1">Ingen planlagte økter i dag</p>
                   return (
                     <div className="space-y-2">
@@ -342,7 +368,7 @@ export default async function HomePage() {
                             <div className="flex gap-2 mt-0.5">
                               {e.moving_time > 0 && <span className="text-xs text-stone-500">{formatTime(e.moving_time)}</span>}
                               {e.icu_training_load > 0 && <span className="text-xs text-stone-400">TSS {e.icu_training_load}</span>}
-                              {e.paired_activity_id && <span className="text-xs text-green-600 font-medium">✓ gjennomført</span>}
+                              {(e.paired_activity_id || todayActs.some(a => a.id === e.id)) && <span className="text-xs text-green-600 font-medium">✓ gjennomført</span>}
                             </div>
                           </div>
                         </div>
@@ -417,9 +443,9 @@ export default async function HomePage() {
                         : cell.mathias.map((e) => (
                           <div key={e.id}
                             className="text-xs leading-tight rounded px-1 py-0.5 truncate"
-                            style={{ backgroundColor: SPORT_COLORS[e.type] + '20', color: SPORT_COLORS[e.type] || '#78716c' }}
+                            style={{ backgroundColor: SPORT_COLORS[e.type] + '20', color: e.done ? '#16a34a' : (SPORT_COLORS[e.type] || '#78716c') }}
                             title={e.name}>
-                            {e.paired_activity_id ? '✓ ' : ''}{e.name.replace(/^(Sykkel|Løp|Svøm|Zwift - )[:·\s]*/i, '').substring(0, 14) || e.name.substring(0, 14)}
+                            {e.done ? '✓ ' : ''}{e.name.replace(/^(Sykkel|Løp|Svøm|Zwift - )[:·\s]*/i, '').substring(0, 14) || e.name.substring(0, 14)}
                           </div>
                         ))}
                     </div>
@@ -444,9 +470,9 @@ export default async function HomePage() {
                         : cell.karoline.map((e) => (
                           <div key={e.id}
                             className="text-xs leading-tight rounded px-1 py-0.5 truncate"
-                            style={{ backgroundColor: SPORT_COLORS[e.type] + '20', color: SPORT_COLORS[e.type] || '#78716c' }}
+                            style={{ backgroundColor: SPORT_COLORS[e.type] + '20', color: e.done ? '#16a34a' : (SPORT_COLORS[e.type] || '#78716c') }}
                             title={e.name}>
-                            {e.paired_activity_id ? '✓ ' : ''}{e.name.replace(/^(Sykkel|Løp|Svøm|Zwift - )[:·\s]*/i, '').substring(0, 14) || e.name.substring(0, 14)}
+                            {e.done ? '✓ ' : ''}{e.name.replace(/^(Sykkel|Løp|Svøm|Zwift - )[:·\s]*/i, '').substring(0, 14) || e.name.substring(0, 14)}
                           </div>
                         ))}
                     </div>
