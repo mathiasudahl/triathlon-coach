@@ -1,197 +1,212 @@
+import Link from 'next/link'
 import { getActivities, getEvents } from '@/lib/intervals'
-import { buildWeekStats, generateInsights, weeklyCalorieSurplus } from '@/lib/coach'
-import StatCard from '@/components/StatCard'
-import InsightCard from '@/components/InsightCard'
-import WeekCard from '@/components/WeekCard'
-import UpcomingEvents from '@/components/UpcomingEvents'
-import TssChart from '@/components/TssChart'
-import FormGauge from '@/components/FormChart'
+import { buildFitnessTimeline } from '@/lib/fitness'
+import { MATHIAS, KAROLINE } from '@/lib/athletes'
+import ReadinessBar from '@/components/ReadinessBar'
 
-function getDateStr(offsetDays: number): string {
+async function fetchForAthlete(athleteId: string, apiKey: string, path: string, params?: Record<string, string>) {
+  const base = process.env.INTERVALS_BASE_URL || 'https://intervals.icu/api/v1'
+  const url = new URL(`${base}${path}`)
+  if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
+  const auth = Buffer.from(`API_KEY:${apiKey}`).toString('base64')
+  const res = await fetch(url.toString(), { headers: { Authorization: `Basic ${auth}` }, next: { revalidate: 300 } })
+  if (!res.ok) return []
+  return res.json()
+}
+
+function dateStr(offsetDays: number): string {
   const d = new Date()
   d.setDate(d.getDate() + offsetDays)
   return d.toISOString().split('T')[0]
 }
 
-function isoWeekKey(d: Date): string {
-  const thu = new Date(d)
-  thu.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 3)
-  const year = thu.getFullYear()
-  const jan4 = new Date(year, 0, 4)
-  const week = Math.ceil(((thu.getTime() - jan4.getTime()) / 86400000 + ((jan4.getDay() + 6) % 7) + 1) / 7)
-  return `${year}-W${String(week).padStart(2, '0')}`
-}
-
-function daysUntilRace(): number {
-  const race = new Date('2026-08-08')
-  const today = new Date()
-  return Math.ceil((race.getTime() - today.getTime()) / 86400000)
+function daysUntil(dateStr: string): number {
+  return Math.ceil((new Date(dateStr).getTime() - new Date().getTime()) / 86400000)
 }
 
 function programWeek(): number {
-  const start = new Date('2026-02-23')
-  const today = new Date()
-  return Math.max(1, Math.ceil((today.getTime() - start.getTime()) / 86400000 / 7) + 1)
+  return Math.max(1, Math.ceil((new Date().getTime() - new Date('2026-02-23').getTime()) / 86400000 / 7) + 1)
 }
 
-function getNextMondaySunday(): { mon: string; sun: string } {
-  const now = new Date()
-  const dayOfWeek = (now.getDay() + 6) % 7 // 0=Mon
-  const mon = new Date(now)
-  mon.setDate(now.getDate() - dayOfWeek + 7)
-  const sun = new Date(mon)
-  sun.setDate(mon.getDate() + 6)
-  return {
-    mon: mon.toISOString().split('T')[0],
-    sun: sun.toISOString().split('T')[0],
-  }
+function formatTime(secs: number): string {
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  return h > 0 ? `${h}t${m > 0 ? ` ${m}m` : ''}` : `${m}min`
 }
 
-export default async function Home() {
-  const now = new Date()
-  const todayStr = getDateStr(0)
-  const currentWeekKey = isoWeekKey(now)
-  const { mon: nextMon, sun: nextSun } = getNextMondaySunday()
+function dayName(dateStr: string): string {
+  return ['Søn', 'Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'][new Date(dateStr).getDay()]
+}
 
-  // Finn slutt på inneværende uke (søndag)
-  const dayOfWeek = (now.getDay() + 6) % 7
-  const thisSunStr = getDateStr(6 - dayOfWeek)
+const SPORT_COLORS: Record<string, string> = {
+  Swim: '#38bdf8', Ride: '#f97316', VirtualRide: '#f97316',
+  Run: '#4ade80', VirtualRun: '#4ade80', WeightTraining: '#facc15',
+}
 
-  const [activities, thisWeekEvents, nextWeekEvents] = await Promise.all([
-    getActivities(getDateStr(-42), todayStr),
-    getEvents(todayStr, thisSunStr),
-    getEvents(nextMon, nextSun),
+export default async function HomePage() {
+  const today = dateStr(0)
+  const dayOfWeek = (new Date().getDay() + 6) % 7
+  const thisSun = dateStr(6 - dayOfWeek)
+
+  const [mathiasActs, mathiasEvents, karolineActs, karolineEvents] = await Promise.all([
+    getActivities(dateStr(-42), today),
+    getEvents(today, thisSun),
+    fetchForAthlete(KAROLINE.id, KAROLINE.apiKey, `/athlete/${KAROLINE.id}/activities`, { oldest: dateStr(-42), newest: today }),
+    fetchForAthlete(KAROLINE.id, KAROLINE.apiKey, `/athlete/${KAROLINE.id}/events`, { oldest: today, newest: thisSun }),
   ])
 
-  const weeks = buildWeekStats(activities)
-  const currentWeekActs = activities.filter(a => {
-    if (!a.start_date_local) return false
-    return isoWeekKey(new Date(a.start_date_local)) === currentWeekKey
-  })
-  const weekKcal = weeklyCalorieSurplus(currentWeekActs)
+  // Fitness for begge
+  const mFitness = buildFitnessTimeline(mathiasActs, mathiasEvents, 0)
+  const kFitness = buildFitnessTimeline(karolineActs, karolineEvents, 0)
+  const mToday = mFitness.filter(d => !d.projected).at(-1)
+  const kToday = kFitness.filter(d => !d.projected).at(-1)
 
-  const latestActivity = [...activities].sort((a, b) =>
-    b.start_date_local.localeCompare(a.start_date_local)
-  )[0]
-  const atl = latestActivity?.icu_atl ?? 0
-  const ctl = latestActivity?.icu_ctl ?? 0
-  const tsb = ctl - atl
+  const mAtl = mToday?.totalAtl ?? 0, mCtl = mToday?.totalCtl ?? 0, mTsb = mCtl - mAtl
+  const kAtl = kToday?.totalAtl ?? 0, kCtl = kToday?.totalCtl ?? 0, kTsb = kCtl - kAtl
 
-  const insights = generateInsights(weeks, { atl, ctl, tsb }, currentWeekKey)
+  // Dagens økter
+  const mTodays = mathiasEvents.filter((e: { start_date_local: string; paired_activity_id?: string }) =>
+    e.start_date_local.startsWith(today) && !e.paired_activity_id
+  )
+  const kTodays = karolineEvents.filter((e: { start_date_local: string; paired_activity_id?: string }) =>
+    e.start_date_local.startsWith(today) && !e.paired_activity_id
+  )
 
-  const todayEvents = thisWeekEvents.filter(e => e.start_date_local.startsWith(todayStr))
-  const restOfWeekEvents = thisWeekEvents.filter(e => !e.start_date_local.startsWith(todayStr))
-
-  const daysLeft = daysUntilRace()
+  const daysLeft = daysUntil('2026-08-08')
   const pWeek = programWeek()
 
   return (
     <main className="min-h-screen bg-zinc-900 text-white">
-      <header className="border-b border-zinc-800 px-4 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+      {/* Header */}
+      <header className="border-b border-zinc-800 px-4 py-3 sticky top-0 z-20 bg-zinc-900/95 backdrop-blur">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-bold tracking-tight">Triathlon Coach</h1>
-            <p className="text-xs text-zinc-400">Mathias — Olympisk triatlon 8. august 2026</p>
+            <h1 className="text-base font-bold tracking-tight">Triathlon Coach</h1>
+            <p className="text-xs text-zinc-500">Uke {pWeek} av 24</p>
           </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-orange-400">{daysLeft}</div>
-            <div className="text-xs text-zinc-400">dager igjen</div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <div className="text-lg font-bold text-orange-400">{daysLeft}</div>
+              <div className="text-xs text-zinc-500">dager til race</div>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-6xl mx-auto px-4 py-5 space-y-5">
 
-        {/* Toppstats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label="Programuke" value={`Uke ${pWeek}`} sub="av 24" />
-          <StatCard label="Fitness (CTL)" value={ctl.toFixed(0)} sub="kronisk belastning" color="text-blue-400" />
-          <StatCard
-            label="Form (TSB)"
-            value={`${tsb > 0 ? '+' : ''}${tsb.toFixed(0)}`}
-            sub={tsb > 5 ? 'Klar for hard økt' : tsb > -5 ? 'Nøytral' : 'Akkumulert fatigue'}
-            color={tsb > 5 ? 'text-green-400' : tsb < -10 ? 'text-red-400' : 'text-amber-400'}
-          />
-          <StatCard
-            label="Treningskcal denne uke"
-            value={weekKcal.toLocaleString('nb-NO')}
-            sub={`+${Math.round(weekKcal / 7)} kcal/dag ekstra`}
-            color="text-amber-300"
-          />
-        </div>
-
-        {/* Coach-analyse */}
+        {/* Dagsoversikt — begge side om side */}
         <section>
-          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Coach-vurdering</h2>
-          <div className="flex flex-col gap-2">
-            {insights.map((ins, i) => <InsightCard key={i} insight={ins} />)}
+          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">I dag — {new Date().toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Mathias */}
+            <Link href="/mathias" className="bg-zinc-800 rounded-xl p-4 hover:bg-zinc-750 transition-colors group block">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: MATHIAS.color }} />
+                  <span className="font-semibold text-zinc-200">Mathias</span>
+                </div>
+                <span className="text-xs text-zinc-500 group-hover:text-zinc-400">Se detaljer →</span>
+              </div>
+              <ReadinessBar tsb={mTsb} atl={mAtl} ctl={mCtl} athleteColor={MATHIAS.color} name={MATHIAS.name} />
+              <div className="mt-3 space-y-2">
+                {mTodays.length > 0 ? mTodays.map((e: { id: number; start_date_local: string; type: string; name: string; moving_time: number; icu_training_load: number }) => (
+                  <div key={e.id} className="flex items-center gap-2.5 p-2 bg-zinc-700/40 rounded-lg">
+                    <div className="w-1 h-8 rounded-full shrink-0" style={{ backgroundColor: SPORT_COLORS[e.type] || '#71717a' }} />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-zinc-100 truncate">{e.name}</div>
+                      <div className="flex gap-2 mt-0.5">
+                        {e.moving_time > 0 && <span className="text-xs text-zinc-500">{formatTime(e.moving_time)}</span>}
+                        {e.icu_training_load > 0 && <span className="text-xs text-zinc-500">TSS {e.icu_training_load}</span>}
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <p className="text-xs text-zinc-500 py-1">Hviledag — ingen økt planlagt</p>
+                )}
+              </div>
+            </Link>
+
+            {/* Karoline */}
+            <Link href="/karoline" className="bg-zinc-800 rounded-xl p-4 hover:bg-zinc-750 transition-colors group block">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: KAROLINE.color }} />
+                  <span className="font-semibold text-zinc-200">Karoline</span>
+                </div>
+                <span className="text-xs text-zinc-500 group-hover:text-zinc-400">Se detaljer →</span>
+              </div>
+              <ReadinessBar tsb={kTsb} atl={kAtl} ctl={kCtl} athleteColor={KAROLINE.color} name={KAROLINE.name} />
+              <div className="mt-3 space-y-2">
+                {kTodays.length > 0 ? kTodays.map((e: { id: number; start_date_local: string; type: string; name: string; moving_time: number; icu_training_load: number }) => (
+                  <div key={e.id} className="flex items-center gap-2.5 p-2 bg-zinc-700/40 rounded-lg">
+                    <div className="w-1 h-8 rounded-full shrink-0" style={{ backgroundColor: SPORT_COLORS[e.type] || '#71717a' }} />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-zinc-100 truncate">{e.name}</div>
+                      <div className="flex gap-2 mt-0.5">
+                        {e.moving_time > 0 && <span className="text-xs text-zinc-500">{formatTime(e.moving_time)}</span>}
+                        {e.icu_training_load > 0 && <span className="text-xs text-zinc-500">TSS {e.icu_training_load}</span>}
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <p className="text-xs text-zinc-500 py-1">Ingen planlagte økter i dag</p>
+                )}
+              </div>
+            </Link>
           </div>
         </section>
 
-        {/* Form */}
-        <FormGauge atl={atl} ctl={ctl} tsb={tsb} />
-
-        {/* TSS-graf */}
-        <TssChart weeks={weeks} />
-
-        {/* Kalorier */}
-        <div className="bg-zinc-800 rounded-xl p-4">
-          <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-2">Ernæring denne uken</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="bg-zinc-700/50 rounded-lg p-3">
-              <div className="text-xs text-zinc-400 mb-1">Treningsforbruk</div>
-              <div className="text-xl font-bold text-amber-300">{weekKcal.toLocaleString('nb-NO')} kcal</div>
-              <div className="text-xs text-zinc-500">ekstra denne uken</div>
-            </div>
-            <div className="bg-zinc-700/50 rounded-lg p-3">
-              <div className="text-xs text-zinc-400 mb-1">Ekstra per dag</div>
-              <div className="text-xl font-bold text-amber-300">+{Math.round(weekKcal / 7)} kcal</div>
-              <div className="text-xs text-zinc-500">over basis (~2 800)</div>
-            </div>
-            <div className="bg-zinc-700/50 rounded-lg p-3">
-              <div className="text-xs text-zinc-400 mb-1">Anbefalt totalt/dag</div>
-              <div className="text-xl font-bold text-amber-300">{(2800 + Math.round(weekKcal / 7)).toLocaleString('nb-NO')} kcal</div>
-              <div className="text-xs text-zinc-500">basis + trening</div>
-            </div>
-          </div>
-          <p className="text-xs text-zinc-500 mt-3 leading-relaxed">
-            Hard økt (I-3+): 60–70 g karbo/time under, recovery-shake innen 30 min (30 g protein + 60 g karbo).
-            Rolig økt (I-1/I-2): vanlig kost holder. Ikke spar kalorier kvelden etter stor treningsdag.
-          </p>
-        </div>
-
-        {/* Dagens økter + resten av uken */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {todayEvents.length > 0 ? (
-            <UpcomingEvents events={todayEvents} title="I dag" />
-          ) : (
-            <div className="bg-zinc-800 rounded-xl p-4">
-              <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-2">I dag</h3>
-              <p className="text-sm text-zinc-400">Ingen planlagte økter — hviledag eller fri økt.</p>
-            </div>
-          )}
-          {restOfWeekEvents.length > 0 && (
-            <UpcomingEvents events={restOfWeekEvents} title="Resten av uken" />
-          )}
-        </div>
-
-        {/* Neste uke */}
-        {nextWeekEvents.length > 0 && (
-          <UpcomingEvents events={nextWeekEvents} title="Neste uke" />
-        )}
-
-        {/* Historikk */}
+        {/* Navigasjon til profiler */}
         <section>
-          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Treningshistorikk</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {[...weeks].reverse().map(w => (
-              <WeekCard key={w.weekKey} week={w} isCurrent={w.weekKey === currentWeekKey} />
-            ))}
+          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Profiler</div>
+          <div className="grid grid-cols-2 gap-3">
+            <Link
+              href="/mathias"
+              className="bg-zinc-800 rounded-xl p-5 flex items-center gap-4 hover:bg-zinc-750 transition-all hover:ring-1 hover:ring-orange-500/40 group"
+            >
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold"
+                style={{ backgroundColor: MATHIAS.color + '20', color: MATHIAS.color }}>
+                M
+              </div>
+              <div>
+                <div className="font-semibold text-zinc-200 group-hover:text-white">Mathias</div>
+                <div className="text-xs text-zinc-500">Olympisk triatlon · 8. aug 2026</div>
+                <div className="flex gap-2 mt-1">
+                  <span className="text-xs" style={{ color: MATHIAS.color }}>CTL {mCtl.toFixed(0)}</span>
+                  <span className={`text-xs ${mTsb > 0 ? 'text-green-400' : 'text-amber-400'}`}>
+                    TSB {mTsb > 0 ? '+' : ''}{mTsb.toFixed(0)}
+                  </span>
+                </div>
+              </div>
+              <div className="ml-auto text-zinc-600 group-hover:text-zinc-400">→</div>
+            </Link>
+
+            <Link
+              href="/karoline"
+              className="bg-zinc-800 rounded-xl p-5 flex items-center gap-4 hover:bg-zinc-750 transition-all hover:ring-1 hover:ring-fuchsia-500/40 group"
+            >
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold"
+                style={{ backgroundColor: KAROLINE.color + '20', color: KAROLINE.color }}>
+                K
+              </div>
+              <div>
+                <div className="font-semibold text-zinc-200 group-hover:text-white">Karoline</div>
+                <div className="text-xs text-zinc-500">Løp + sykkel · Sub-50 10k · Sub-2t halvmaraton</div>
+                <div className="flex gap-2 mt-1">
+                  <span className="text-xs" style={{ color: KAROLINE.color }}>CTL {kCtl.toFixed(0)}</span>
+                  <span className={`text-xs ${kTsb > 0 ? 'text-green-400' : 'text-amber-400'}`}>
+                    TSB {kTsb > 0 ? '+' : ''}{kTsb.toFixed(0)}
+                  </span>
+                </div>
+              </div>
+              <div className="ml-auto text-zinc-600 group-hover:text-zinc-400">→</div>
+            </Link>
           </div>
         </section>
 
-        <footer className="text-xs text-zinc-600 text-center pb-4">
-          Data fra intervals.icu · Revalideres hvert 5. min · Soner basert på laktatmåling NIMI mai 2025
+        <footer className="text-xs text-zinc-700 text-center pb-4">
+          Data fra intervals.icu · Revalideres hvert 5. min
         </footer>
       </div>
     </main>
