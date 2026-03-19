@@ -1,17 +1,20 @@
-const BASE_URL = process.env.INTERVALS_BASE_URL || 'https://intervals.icu/api/v1'
-const ATHLETE_ID = process.env.INTERVALS_ATHLETE_ID || 'i303639'
-const API_KEY = process.env.INTERVALS_API_KEY || ''
+const BASE = 'https://intervals.icu/api/v1'
 
-const auth = Buffer.from(`API_KEY:${API_KEY}`).toString('base64')
+function auth(apiKey: string) {
+  return 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64')
+}
 
-async function apiFetch(path: string, params?: Record<string, string>) {
-  const url = new URL(`${BASE_URL}${path}`)
+async function get<T>(athleteId: string, apiKey: string, path: string, params?: Record<string, string>): Promise<T> {
+  const url = new URL(`${BASE}/athlete/${athleteId}${path}`)
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
   const res = await fetch(url.toString(), {
-    headers: { Authorization: `Basic ${auth}` },
+    headers: { Authorization: auth(apiKey) },
     next: { revalidate: 300 },
   })
-  if (!res.ok) throw new Error(`intervals.icu ${path} → ${res.status}`)
+  if (!res.ok) {
+    console.error(`Intervals API error ${res.status}: ${path}`)
+    return [] as T
+  }
   return res.json()
 }
 
@@ -20,15 +23,14 @@ export type Activity = {
   start_date_local: string
   type: string
   name: string
-  moving_time: number
-  distance: number
-  icu_training_load: number
-  icu_weighted_avg_watts: number
-  average_heartrate: number
-  max_heartrate: number
+  moving_time?: number
+  distance?: number
+  total_elevation_gain: number
+  average_watts?: number
+  average_heartrate?: number
+  icu_training_load?: number
   icu_atl: number
   icu_ctl: number
-  trainer: boolean
 }
 
 export type Event = {
@@ -36,82 +38,112 @@ export type Event = {
   start_date_local: string
   type: string
   name: string
-  moving_time: number
-  icu_training_load: number
-  icu_atl: number
-  icu_ctl: number
-  paired_activity_id?: string
   description?: string
+  moving_time?: number
+  icu_training_load?: number
+  paired_activity_id?: string
 }
 
 export type Wellness = {
-  id: string
-  restingHR?: number
-  hrv?: number
+  id: string // date YYYY-MM-DD
   weight?: number
+  hrv?: number
+  restingHR?: number
   sleepSecs?: number
+  sleepScore?: number
+  spO2?: number
 }
 
-export async function getActivities(oldest: string, newest: string): Promise<Activity[]> {
-  return apiFetch(`/athlete/${ATHLETE_ID}/activities`, { oldest, newest })
+export type FitnessPoint = {
+  id: string // date YYYY-MM-DD
+  ctl: number
+  atl: number
+  form: number
+  weight?: number
+  hrv?: number
+  restingHR?: number
 }
 
-export async function getEvents(oldest: string, newest: string): Promise<Event[]> {
-  return apiFetch(`/athlete/${ATHLETE_ID}/events`, { oldest, newest })
+function dateStr(offsetDays: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  return d.toISOString().split('T')[0]
 }
 
-export async function getWellness(oldest: string, newest: string): Promise<Wellness[]> {
-  return apiFetch(`/athlete/${ATHLETE_ID}/wellness`, { oldest, newest })
+export async function getActivities(athleteId: string, apiKey: string, oldest: string, newest: string): Promise<Activity[]> {
+  return get(athleteId, apiKey, '/activities', { oldest, newest })
 }
 
-// Sone basert på sykkelwatt (laktatmåling)
-export function bikePowerZone(watt: number): string {
-  if (watt <= 0) return '?'
-  if (watt < 183) return 'I-1'
-  if (watt < 210) return 'I-2'
-  if (watt < 229) return 'I-3'
-  if (watt <= 260) return 'I-4'
-  return 'I-5'
+export async function getEvents(athleteId: string, apiKey: string, oldest: string, newest: string): Promise<Event[]> {
+  return get(athleteId, apiKey, '/events', { oldest, newest })
 }
 
-// Sone basert på HF (løp/svøm)
-export function hrZone(hr: number): string {
-  if (hr <= 0) return '?'
-  if (hr < 130) return 'I-1'
-  if (hr < 151) return 'I-2'
-  if (hr < 172) return 'I-3'
-  if (hr < 183) return 'I-4'
-  return 'I-5'
+export async function getWellness(athleteId: string, apiKey: string, oldest: string, newest: string): Promise<Wellness[]> {
+  return get(athleteId, apiKey, '/wellness', { oldest, newest })
 }
 
-export function activityZone(a: Activity): string {
-  const type = a.type
-  if ((type === 'Ride' || type === 'VirtualRide') && a.icu_weighted_avg_watts > 0) {
-    return bikePowerZone(a.icu_weighted_avg_watts)
-  }
-  return hrZone(a.average_heartrate)
+export async function getFitness(athleteId: string, apiKey: string, oldest: string, newest: string): Promise<FitnessPoint[]> {
+  // Wellness inneholder CTL/ATL — vi mapper til FitnessPoint
+  const raw = await get<any[]>(athleteId, apiKey, '/wellness', { oldest, newest })
+  return raw
+    .filter((w: any) => w.ctl != null)
+    .map((w: any) => ({
+      id: w.id,
+      ctl: w.ctl,
+      atl: w.atl,
+      form: (w.ctl ?? 0) - (w.atl ?? 0),
+      weight: w.weight ?? undefined,
+      hrv: w.hrv ?? undefined,
+      restingHR: w.restingHR ?? undefined,
+    }))
 }
 
-export function sportLabel(type: string): string {
-  const map: Record<string, string> = {
-    Swim: 'Svøm',
-    Ride: 'Sykkel',
-    VirtualRide: 'Sykkel',
-    Run: 'Løp',
-    NordicSki: 'Ski',
-    WeightTraining: 'Styrke',
-  }
-  return map[type] ?? type
+export async function getAthlete(athleteId: string, apiKey: string) {
+  const url = `${BASE}/athlete/${athleteId}`
+  const res = await fetch(url, {
+    headers: { Authorization: auth(apiKey) },
+    next: { revalidate: 3600 },
+  })
+  if (!res.ok) return null
+  return res.json()
 }
 
-export function sportColor(type: string): string {
-  const map: Record<string, string> = {
-    Swim: '#38bdf8',
-    Ride: '#f97316',
-    VirtualRide: '#f97316',
-    Run: '#4ade80',
-    NordicSki: '#a78bfa',
-    WeightTraining: '#facc15',
-  }
-  return map[type] ?? '#94a3b8'
+// Write event to Intervals.icu
+export async function createEvent(athleteId: string, apiKey: string, event: Partial<Event>): Promise<Event | null> {
+  const url = `${BASE}/athlete/${athleteId}/events`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: auth(apiKey),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(event),
+  })
+  if (!res.ok) return null
+  return res.json()
 }
+
+export async function updateEvent(athleteId: string, apiKey: string, eventId: number, event: Partial<Event>): Promise<Event | null> {
+  const url = `${BASE}/athlete/${athleteId}/events/${eventId}`
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: auth(apiKey),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(event),
+  })
+  if (!res.ok) return null
+  return res.json()
+}
+
+export async function deleteEvent(athleteId: string, apiKey: string, eventId: number): Promise<boolean> {
+  const url = `${BASE}/athlete/${athleteId}/events/${eventId}`
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: auth(apiKey) },
+  })
+  return res.ok
+}
+
+export { dateStr }

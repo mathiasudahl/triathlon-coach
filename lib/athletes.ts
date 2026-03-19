@@ -1,84 +1,69 @@
-export type AthleteConfig = {
+export type Athlete = {
   id: string
-  apiKey: string
   name: string
-  color: string // accent-farge for denne utøveren
-  weight: number
-  goals: Goal[]
-  sport: 'triathlon' | 'cycling' | 'running' | 'multisport'
-  raceDate?: string // ISO dato for A-mål
-  ftp?: number
-  criticalSpeed?: number // min/km
-  hrMax?: number
+  apiKey: string
+  color: string
+  colorLight: string
+  colorBg: string
+  age: number
+  heightCm: number
+  weightKg: number
+  ftp: number
+  mainGoal: string
+  mainGoalDate: string
+  sports: string[]
 }
 
-export type Goal = {
-  label: string
-  sport: 'run' | 'bike' | 'swim'
-  targetValue: number // sekunder (run/swim) eller watt (bike)
-  targetDate: string  // ISO dato
-  unit: string        // '10k', 'halvmaraton', 'FTP'
-  description: string
-}
-
-export const MATHIAS: AthleteConfig = {
+export const MATHIAS: Athlete = {
   id: 'i303639',
-  apiKey: '5zxq2q3lz5rrphkcmssymootd',
   name: 'Mathias',
-  color: '#f97316', // orange
-  weight: 70,
-  sport: 'triathlon',
-  raceDate: '2026-08-08',
+  apiKey: '5zxq2q3lz5rrphkcmssymootd',
+  color: '#16a34a',
+  colorLight: '#86efac',
+  colorBg: '#f0fdf4',
+  age: 31,
+  heightCm: 176,
+  weightKg: 70,
   ftp: 237,
-  criticalSpeed: 3.93, // 3:56/km i m/s
-  hrMax: 199,
-  goals: [
-    {
-      label: 'Olympisk triatlon',
-      sport: 'bike',
-      targetValue: 280,
-      targetDate: '2026-08-08',
-      unit: 'FTP mål',
-      description: 'Race-day FTP ~280W for å holde 40km på terskel',
-    },
-  ],
+  mainGoal: 'Olympisk triatlon',
+  mainGoalDate: '2026-08-08',
+  sports: ['Swim', 'Ride', 'Run'],
 }
 
-export const KAROLINE: AthleteConfig = {
+export const KAROLINE: Athlete = {
   id: 'i456432',
-  apiKey: '7k8kuy3j0wqxg2y7x4ucg6epd',
   name: 'Karoline',
-  color: '#e879f9', // fuchsia
-  weight: 60, // estimert
-  sport: 'multisport',
-  ftp: 180, // estimert fra HF/watt-data
-  hrMax: 195, // estimert
-  goals: [
-    {
-      label: '10 km',
-      sport: 'run',
-      targetValue: 50 * 60, // sub-50 min
-      targetDate: '2026-06-01',
-      unit: '10k',
-      description: 'Sub-50 min på 10k. Nåværende form tilsier ~48–49 min.',
-    },
-    {
-      label: 'Halvmaraton',
-      sport: 'run',
-      targetValue: 120 * 60, // sub-2t
-      targetDate: '2026-10-01',
-      unit: 'halvmaraton',
-      description: 'Sub-2t halvmaraton. Nåværende Z2-pace (5:40/km) tilsier dette er innen rekkevidde.',
-    },
-    {
-      label: 'Sykkel FTP',
-      sport: 'bike',
-      targetValue: 210,
-      targetDate: '2026-08-01',
-      unit: 'FTP mål',
-      description: 'FTP 210W — fra estimert ~180W nå. ~17% vekst over 5 måneder.',
-    },
-  ],
+  apiKey: '7k8kuy3j0wqxg2y7x4ucg6epd',
+  color: '#2563eb',
+  colorLight: '#93c5fd',
+  colorBg: '#eff6ff',
+  age: 29,
+  heightCm: 173,
+  weightKg: 60,
+  ftp: 180,
+  mainGoal: 'Sub-50 10k',
+  mainGoalDate: '2026-06-01',
+  sports: ['Run', 'Ride'],
 }
 
 export const ATHLETES = [MATHIAS, KAROLINE]
+
+export const SPORT_COLOR: Record<string, string> = {
+  Swim: '#0ea5e9',
+  Ride: '#f97316',
+  VirtualRide: '#f97316',
+  Run: '#22c55e',
+  VirtualRun: '#22c55e',
+  WeightTraining: '#a855f7',
+  Walk: '#84cc16',
+}
+
+export const SPORT_LABEL: Record<string, string> = {
+  Swim: 'Svøm',
+  Ride: 'Sykkel',
+  VirtualRide: 'Zwift',
+  Run: 'Løp',
+  VirtualRun: 'Løp',
+  WeightTraining: 'Styrke',
+  Walk: 'Gange',
+}
