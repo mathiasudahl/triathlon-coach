@@ -96,7 +96,16 @@ export default async function KarolinePage() {
   const currentWeekActs = activities.filter((a: { start_date_local?: string }) =>
     a.start_date_local && isoWeekKey(new Date(a.start_date_local)) === currentWeekKey
   )
-  const insights = generateInsights(weeks, { atl, ctl, tsb }, currentWeekKey)
+  // Generer insights, men erstatt svøm-kravet (Karoline: 1x/uke, ikke 3x)
+  const rawInsights = generateInsights(weeks, { atl, ctl, tsb }, currentWeekKey)
+  const avgSwim = weeks.slice(-4).reduce((s, w) => s + w.swim.count, 0) / Math.max(1, weeks.slice(-4).length)
+  const insights = rawInsights.map(ins =>
+    ins.text.startsWith('Svøm:')
+      ? avgSwim >= 1
+        ? { type: 'good' as const, text: `Svøm: ${avgSwim.toFixed(1)}x/uke — bra, målet er 1x/uke for å holde teknikken oppe.` }
+        : { type: 'info' as const, text: `Svøm: Prøv å få inn 1 svømeøkt i uken — god kryssaktivitet for løp og sykkel.` }
+      : ins
+  )
 
   const todayEvents = eventsThisWeek.filter((e: { start_date_local: string; paired_activity_id?: string }) =>
     e.start_date_local.startsWith(today) && !e.paired_activity_id

@@ -7,12 +7,12 @@ type Props = {
   color?: string
 }
 
-export default function StatCard({ label, value, sub, color = 'text-white' }: Props) {
+export default function StatCard({ label, value, sub, color = 'text-stone-800' }: Props) {
   return (
-    <div className="bg-zinc-800 rounded-xl p-4 flex flex-col gap-1">
-      <span className="text-xs text-zinc-400 uppercase tracking-wide">{label}</span>
+    <div className="bg-white rounded-xl p-4 flex flex-col gap-1 shadow-sm border border-stone-100">
+      <span className="text-xs text-stone-400 uppercase tracking-wide">{label}</span>
       <span className={`text-2xl font-bold ${color}`}>{value}</span>
-      {sub && <span className="text-xs text-zinc-500">{sub}</span>}
+      {sub && <span className="text-xs text-stone-400">{sub}</span>}
     </div>
   )
 }

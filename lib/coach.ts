@@ -122,8 +122,9 @@ export function generateInsights(
   const avgSwimPerWeek = recent.reduce((s, w) => s + w.swim.count, 0) / recent.length
   const avgTss = recent.reduce((s, w) => s + w.totalTss, 0) / recent.length
 
-  // Svøm
-  if (avgSwimPerWeek < 2.5) {
+  // Svøm (Mathias: 3x/uke, Karoline: 1x/uke — sjekkes per context)
+  const swimTarget = 2.5 // brukes for Mathias; Karoline-siden overskriver
+  if (avgSwimPerWeek < swimTarget) {
     insights.push({ type: 'warning', text: `Svøm: Snittet er ${avgSwimPerWeek.toFixed(1)}x/uke de siste 4 ukene — planen krever 3x. Svøm er den største flaskehalsen mot konkurransen.` })
   } else {
     insights.push({ type: 'good', text: `Svøm: ${avgSwimPerWeek.toFixed(1)}x/uke i snitt — godt i rute!` })

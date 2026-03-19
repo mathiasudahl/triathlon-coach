@@ -49,12 +49,12 @@ export default function PushWeekButton({ events, athleteId, apiKey, label = 'Pus
       <button
         onClick={handlePush}
         disabled={state === 'loading' || state === 'success'}
-        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
           state === 'success'
-            ? 'bg-green-500/20 text-green-400 cursor-default'
+            ? 'bg-green-50 text-green-700 border-green-200 cursor-default'
             : state === 'error'
-            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-            : 'bg-zinc-700 text-zinc-200 hover:bg-zinc-600 active:scale-95'
+            ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'
+            : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50 hover:border-stone-300 active:scale-95 shadow-sm'
         }`}
       >
         {state === 'loading' ? 'Pusher...' :
