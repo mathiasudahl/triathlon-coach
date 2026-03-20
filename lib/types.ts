@@ -110,7 +110,7 @@ export interface Wellness {
 export interface WeatherData {
   temperature: number;
   windspeed: number;
-  weathercode: number;
+  symbol: string;
   description: string;
 }
 

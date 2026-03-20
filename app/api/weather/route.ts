@@ -1,46 +1,99 @@
 import { NextResponse } from "next/server";
 import type { WeatherData, WeatherForecast } from "@/lib/types";
 
-const WMO_DESCRIPTION: Record<number, string> = {
-  0: "Klart", 1: "Stort sett klart", 2: "Delvis skyet", 3: "Overskyet",
-  45: "Tåke", 48: "Rimtåke",
-  51: "Lett yr", 53: "Yr", 55: "Tett yr",
-  61: "Lett regn", 63: "Regn", 65: "Kraftig regn",
-  71: "Lett snø", 73: "Snø", 75: "Kraftig snø",
-  80: "Lett regnbyger", 81: "Regnbyger", 82: "Kraftige regnbyger",
-  85: "Snøbyger", 86: "Kraftige snøbyger",
-  95: "Tordenvær", 96: "Tordenvær med hagl", 99: "Tordenvær med kraftig hagl",
-};
+const SYMBOL_DESCRIPTION: [string, string][] = [
+  ["clearsky", "Klarvær"],
+  ["fair", "Lettskyet"],
+  ["partlycloudy", "Delvis skyet"],
+  ["cloudy", "Skyet"],
+  ["fog", "Tåke"],
+  ["heavyrain", "Kraftig regn"],
+  ["heavyrainshowers", "Kraftig regn"],
+  ["lightrain", "Lett regn"],
+  ["lightrainshowers", "Lett regn"],
+  ["rain", "Regn"],
+  ["rainshowers", "Regn"],
+  ["lightsleet", "Sludd"],
+  ["sleet", "Sludd"],
+  ["lightsnow", "Snø"],
+  ["snow", "Snø"],
+  ["snowshowers", "Snø"],
+  ["thunder", "Torden"],
+];
+
+function symbolDescription(symbol: string): string {
+  for (const [prefix, desc] of SYMBOL_DESCRIPTION) {
+    if (symbol.startsWith(prefix)) return desc;
+  }
+  return "Ukjent";
+}
+
+function toOsloDate(utcTimeStr: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Oslo",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date(utcTimeStr));
+}
+
+interface YrEntry {
+  time: string;
+  data: {
+    instant: { details: { air_temperature: number; wind_speed: number } };
+    next_1_hours?: { summary: { symbol_code: string } };
+    next_12_hours?: { summary: { symbol_code: string } };
+  };
+}
 
 export async function GET() {
-  const url =
-    "https://api.open-meteo.com/v1/forecast" +
-    "?latitude=59.91&longitude=10.75" +
-    "&daily=temperature_2m_max,weathercode,windspeed_10m_max" +
-    "&timezone=Europe%2FOslo" +
-    "&forecast_days=14";
+  const url = "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=59.91&lon=10.75";
 
   try {
-    const res = await fetch(url, { next: { revalidate: 1800 } });
+    const res = await fetch(url, {
+      headers: { "User-Agent": "innsats-treningsapp/1.0 github.com/mathiasudahl/innsats" },
+      next: { revalidate: 3600 },
+    });
     if (!res.ok) throw new Error(`Weather fetch failed: ${res.status}`);
     const data = await res.json();
 
-    // Daily forecast keyed by date (windspeed from km/h → m/s)
+    const timeseries: YrEntry[] = data.properties.timeseries;
+
+    // Group entries by Oslo local date
+    const byDate = new Map<string, YrEntry[]>();
+    for (const entry of timeseries) {
+      const date = toOsloDate(entry.time);
+      if (!byDate.has(date)) byDate.set(date, []);
+      byDate.get(date)!.push(entry);
+    }
+
     const forecast: WeatherForecast = {};
-    const daily = data.daily;
-    for (let i = 0; i < daily.time.length; i++) {
-      const date: string = daily.time[i];
-      const code: number = daily.weathercode[i];
+    for (const [date, entries] of byDate) {
+      // Max temperature and wind for the day
+      let maxTemp = -Infinity;
+      let maxWind = 0;
+      for (const e of entries) {
+        const t = e.data.instant.details.air_temperature;
+        const w = e.data.instant.details.wind_speed;
+        if (t > maxTemp) maxTemp = t;
+        if (w > maxWind) maxWind = w;
+      }
+
+      // Symbol: prefer next_12_hours from the 06:00 UTC entry, fallback to first next_1_hours
+      const entry06 = entries.find((e) => e.time.endsWith("T06:00:00Z"));
+      let symbol =
+        entry06?.data.next_12_hours?.summary.symbol_code ??
+        entries.find((e) => e.data.next_1_hours)?.data.next_1_hours?.summary.symbol_code ??
+        "cloudy";
+
       forecast[date] = {
-        temperature: Math.round(daily.temperature_2m_max[i]),
-        windspeed: Math.round(daily.windspeed_10m_max[i] / 3.6),
-        weathercode: code,
-        description: WMO_DESCRIPTION[code] ?? "Ukjent",
+        temperature: Math.round(maxTemp),
+        windspeed: Math.round(maxWind),
+        symbol,
+        description: symbolDescription(symbol),
       };
     }
 
-    // today = first entry in forecast
-    const todayKey = daily.time[0] as string;
+    // today = first date in forecast
+    const todayKey = [...byDate.keys()][0];
     const today: WeatherData = forecast[todayKey];
 
     return NextResponse.json({ today, forecast });

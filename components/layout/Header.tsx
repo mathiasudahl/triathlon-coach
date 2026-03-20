@@ -5,25 +5,18 @@ import { useTheme } from "./ThemeProvider";
 import { useEffect, useState } from "react";
 import type { WeatherData } from "@/lib/types";
 
-const WEATHER_CODES: Record<number, string> = {
-  0: "Klart",
-  1: "Nesten klart", 2: "Delvis skyet", 3: "Overskyet",
-  45: "Tåke", 48: "Tåke",
-  51: "Yr", 53: "Yr", 55: "Yr",
-  61: "Regn", 63: "Regn", 65: "Kraftig regn",
-  71: "Snø", 73: "Snø", 75: "Kraftig snø",
-  80: "Regnbyger", 81: "Regnbyger", 82: "Kraftige byger",
-  95: "Tordenvær",
-};
-
-function weatherIcon(code: number): string {
-  if (code === 0) return "☀️";
-  if (code <= 3) return "⛅";
-  if (code <= 48) return "🌫️";
-  if (code <= 67) return "🌧️";
-  if (code <= 77) return "❄️";
-  if (code <= 82) return "🌦️";
-  return "⛈️";
+const SYMBOL_EMOJI: [string, string][] = [
+  ["clearsky", "☀️"], ["fair", "🌤️"], ["partlycloudy", "⛅"], ["cloudy", "☁️"],
+  ["fog", "🌫️"], ["heavyrain", "🌧️"], ["heavyrainshowers", "🌧️"],
+  ["lightrain", "🌦️"], ["lightrainshowers", "🌦️"], ["rain", "🌧️"], ["rainshowers", "🌧️"],
+  ["lightsleet", "🌨️"], ["sleet", "🌨️"], ["lightsnow", "❄️"], ["snow", "❄️"], ["snowshowers", "❄️"],
+  ["thunder", "⛈️"],
+];
+function symbolToEmoji(symbol: string): string {
+  for (const [prefix, emoji] of SYMBOL_EMOJI) {
+    if (symbol.startsWith(prefix)) return emoji;
+  }
+  return "🌡️";
 }
 
 export function Header() {
@@ -33,7 +26,7 @@ export function Header() {
   useEffect(() => {
     fetch("/api/weather")
       .then((r) => r.json())
-      .then(setWeather)
+      .then((d) => setWeather(d.today ?? null))
       .catch(() => {});
   }, []);
 
@@ -53,7 +46,7 @@ export function Header() {
         <div className="flex items-center gap-3 text-sm">
           {weather && (
             <span style={{ color: "var(--text-subtle)" }}>
-              {weatherIcon(weather.weathercode)} {Math.round(weather.temperature)}°C
+              {symbolToEmoji(weather.symbol)} {Math.round(weather.temperature)}°C
             </span>
           )}
           <button

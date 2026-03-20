@@ -132,6 +132,7 @@ export default function Home() {
           mathiasEvents={mathiasEvents}
           karolineActivities={karolineActivities}
           karolineEvents={karolineEvents}
+          weather={weather}
           onRefresh={refresh}
         />
       </Suspense>

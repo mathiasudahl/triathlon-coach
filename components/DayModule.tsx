@@ -59,15 +59,18 @@ const SPORT_ICON: Record<string, string> = {
 };
 function sportIcon(t: string) { return SPORT_ICON[t] ?? '⚡'; }
 
-function weatherIcon(code: number): string {
-  if (code <= 1) return '☀️';
-  if (code <= 3) return '☁️';
-  if (code <= 48) return '🌫️';
-  if (code <= 67) return '🌧️';
-  if (code <= 77) return '❄️';
-  if (code <= 82) return '🌦️';
-  if (code <= 86) return '🌨️';
-  return '⛈️';
+const SYMBOL_EMOJI: [string, string][] = [
+  ['clearsky', '☀️'], ['fair', '🌤️'], ['partlycloudy', '⛅'], ['cloudy', '☁️'],
+  ['fog', '🌫️'], ['heavyrain', '🌧️'], ['heavyrainshowers', '🌧️'],
+  ['lightrain', '🌦️'], ['lightrainshowers', '🌦️'], ['rain', '🌧️'], ['rainshowers', '🌧️'],
+  ['lightsleet', '🌨️'], ['sleet', '🌨️'], ['lightsnow', '❄️'], ['snow', '❄️'], ['snowshowers', '❄️'],
+  ['thunder', '⛈️'],
+];
+function symbolToEmoji(symbol: string): string {
+  for (const [prefix, emoji] of SYMBOL_EMOJI) {
+    if (symbol.startsWith(prefix)) return emoji;
+  }
+  return '🌡️';
 }
 
 function fmtDur(s: number) {
@@ -82,6 +85,7 @@ export interface DayModuleProps {
   mathiasEvents: WorkoutEvent[];
   karolineActivities: Activity[];
   karolineEvents: WorkoutEvent[];
+  weather: WeatherData | null;
   onRefresh: () => void;
 }
 
@@ -224,7 +228,7 @@ function AthletePanel({ slug, name, color, activities, events, weather, onRefres
         </div>
         {weather && (
           <span className="text-xs opacity-60 tabular-nums">
-            {weatherIcon(weather.weathercode)} {weather.temperature}°C · {weather.windspeed} m/s
+            {symbolToEmoji(weather.symbol)} {weather.temperature != null ? `${weather.temperature}°C` : '—'} · {weather.windspeed != null ? `${weather.windspeed} m/s` : '—'}
           </span>
         )}
       </div>
@@ -387,16 +391,8 @@ function AthletePanel({ slug, name, color, activities, events, weather, onRefres
 // ─── DayModule ─────────────────────────────────────────────────────────────────
 
 export function DayModule({
-  mathiasActivities, mathiasEvents, karolineActivities, karolineEvents, onRefresh,
+  mathiasActivities, mathiasEvents, karolineActivities, karolineEvents, weather, onRefresh,
 }: DayModuleProps) {
-  const [weather, setWeather] = useState<WeatherData | null>(null);
-
-  useEffect(() => {
-    fetch('/api/weather')
-      .then((r) => r.json())
-      .then((d) => { if (!d.error) setWeather(d); })
-      .catch(() => {});
-  }, []);
 
   return (
     <div

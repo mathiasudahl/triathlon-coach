@@ -238,7 +238,7 @@ Dato i dag: ${todayStr}
   }
 
   if (weather) {
-    prompt += `\nVær i dag: ${weather.temperature}°C, vind ${weather.windspeed} m/s, kode ${weather.weathercode}\n`;
+    prompt += `\nVær i dag: ${weather.temperature}°C, vind ${weather.windspeed} m/s, symbol ${weather.symbol} (${weather.description})\n`;
   }
 
   prompt += `
@@ -246,7 +246,7 @@ Instruksjoner:
 1. weekType: Bruk programfasen direkte fra konteksten om tilgjengelig (f.eks. "Build 1: Restitusjon"). Ellers bestem basert på kommende plan. Maks 4 ord.
 2. summary: Kommenter gårsdagens økt KORT (maks 2 setninger). Hvis hviledag: si noe positivt om hvile og hva som venter. ALDRI kall hviledag et "avvik fra plan" — hvile ER planen.
 3. nutritionAdvice: Gi en KORT kostholdsanbefaling for i dag (maks 1 setning). Fokuser på praktiske tips.
-4. weatherNote: Bare hvis regn (kode 51-82) eller sterk vind (>10 m/s) treffer planlagt utendørsøkt (Run/Ride). Null ellers.
+4. weatherNote: Bare hvis regnvær (symbol inneholder "rain", "sleet", "shower") eller sterk vind (>10 m/s) treffer planlagt utendørsøkt (Run/Ride). Null ellers.
 5. adaptWeek: Sett true BARE om gjennomført økt avvek >20% fra planlagt TSS (ikke hviledag). Hviledag = adaptWeek=false.
 6. adaptSuggestion: Konkret forslag kun om adaptWeek=true.
 

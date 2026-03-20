@@ -20,7 +20,7 @@ async function fetchWeather(): Promise<WeatherData | null> {
     return {
       temperature: Math.round(cw.temperature),
       windspeed: Math.round(cw.windspeed),
-      weathercode: cw.weathercode,
+      symbol: String(cw.weathercode ?? ""),
       description: "",
     };
   } catch {

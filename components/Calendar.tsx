@@ -494,15 +494,18 @@ function Chip({ chip, color, date, onDelete, onRefresh }: {
 
 const SLOTS = 3;
 
-function weatherIcon(code: number): string {
-  if (code <= 1) return '☀️';
-  if (code <= 3) return '☁️';
-  if (code <= 48) return '🌫️';
-  if (code <= 67) return '🌧️';
-  if (code <= 77) return '❄️';
-  if (code <= 82) return '🌦️';
-  if (code <= 86) return '🌨️';
-  return '⛈️';
+const SYMBOL_EMOJI: [string, string][] = [
+  ['clearsky', '☀️'], ['fair', '🌤️'], ['partlycloudy', '⛅'], ['cloudy', '☁️'],
+  ['fog', '🌫️'], ['heavyrain', '🌧️'], ['heavyrainshowers', '🌧️'],
+  ['lightrain', '🌦️'], ['lightrainshowers', '🌦️'], ['rain', '🌧️'], ['rainshowers', '🌧️'],
+  ['lightsleet', '🌨️'], ['sleet', '🌨️'], ['lightsnow', '❄️'], ['snow', '❄️'], ['snowshowers', '❄️'],
+  ['thunder', '⛈️'],
+];
+function symbolToEmoji(symbol: string): string {
+  for (const [prefix, emoji] of SYMBOL_EMOJI) {
+    if (symbol.startsWith(prefix)) return emoji;
+  }
+  return '🌡️';
 }
 
 function DayCol({ date, chips, color, isWeekStart, weather, showWeather, onRefresh }: {
@@ -577,7 +580,7 @@ function DayCol({ date, chips, color, isWeekStart, weather, showWeather, onRefre
           {format(date, 'd', { locale: nb })}
         </div>
         <div style={{ fontSize: 9, color: 'var(--text-subtle)', marginTop: 1, lineHeight: 1.2, height: 13 }}>
-          {showWeather && weather ? `${weatherIcon(weather.weathercode)}${weather.temperature}°` : ''}
+          {showWeather && weather && weather.temperature != null ? `${symbolToEmoji(weather.symbol)}${weather.temperature}°` : ''}
         </div>
       </div>
 
