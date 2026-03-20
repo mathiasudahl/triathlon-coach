@@ -4,7 +4,7 @@ import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { addDays, format, isToday, isBefore, startOfDay } from 'date-fns';
 import { nb } from 'date-fns/locale';
-import type { Activity, WorkoutEvent, WeatherData } from '@/lib/types';
+import type { Activity, WorkoutEvent, WeatherData, WeatherForecast } from '@/lib/types';
 
 // ─── Sport metadata ───────────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ function buildDays() {
   const monday = startOfDay(addDays(now, day === 0 ? -6 : 1 - day));
   return Array.from({ length: 14 }, (_, i) => addDays(monday, i));
 }
-const DAY_SHORT = ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'];
+const DAY_SHORT: Record<number, string> = { 0: 'man', 1: 'tir', 2: 'ons', 3: 'tor', 4: 'fre', 5: 'lør', 6: 'søn' };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +50,7 @@ export interface CalendarProps {
   karolineEvents: WorkoutEvent[];
   preview?: { workout: WorkoutEvent; athleteSlug: 'mathias' | 'karoline' } | null;
   weather?: WeatherData | null;
+  forecast?: WeatherForecast;
   onRefresh: () => void;
 }
 
@@ -58,6 +59,7 @@ interface ChipDetail {
   duration?: number; distance?: number; tss?: number;
   hr?: number; watts?: number; elevation?: number; intensity?: number;
   description?: string;
+  indoor?: boolean;
 }
 
 interface WorkoutChip {
@@ -88,10 +90,13 @@ function getChips(
   const chips: WorkoutChip[] = [];
 
   for (const a of dayActs) {
+    const isIndoor = a.indoor_workout ?? a.trainer ?? null;
     const meta: string[] = [];
     if (a.moving_time) meta.push(formatDuration(a.moving_time));
     if (a.distance > 0) meta.push(formatDist(a.distance));
     if (a.icu_training_load) meta.push(`${Math.round(a.icu_training_load)} TSS`);
+    if (isIndoor === true) meta.push('inne');
+    else if (isIndoor === false) meta.push('ute');
     chips.push({
       icon: sportIcon(a.type), name: shortName(a.name), meta: meta.join(' · '), done: true,
       detail: {
@@ -102,15 +107,19 @@ function getChips(
         watts: a.average_watts ? Math.round(a.average_watts) : undefined,
         elevation: a.total_elevation_gain ? Math.round(a.total_elevation_gain) : undefined,
         intensity: a.icu_intensity,
+        indoor: isIndoor === null ? undefined : isIndoor,
       },
     });
   }
 
   for (const e of dayEvts) {
     if (dayActs.some((a) => a.type === e.type)) continue;
+    const isIndoor = e.indoor_workout ?? null;
     const meta: string[] = [];
     if (e.moving_time) meta.push(formatDuration(e.moving_time));
     if (e.icu_training_load) meta.push(`${Math.round(e.icu_training_load)} TSS`);
+    if (isIndoor === true) meta.push('inne');
+    else if (isIndoor === false) meta.push('ute');
     chips.push({
       icon: sportIcon(e.type), name: shortName(e.name), meta: meta.join(' · '), done: false,
       eventId: e.id, athleteSlug,
@@ -118,6 +127,7 @@ function getChips(
         name: shortName(e.name), type: e.type, done: false,
         duration: e.moving_time, tss: e.icu_training_load ? Math.round(e.icu_training_load) : undefined,
         description: e.description,
+        indoor: isIndoor === null ? undefined : isIndoor,
       },
     });
   }
@@ -168,7 +178,11 @@ function TooltipPortal({ detail, eventDate, color, anchorX, anchorY, canEdit, on
   if (detail.hr) rows.push({ label: 'Puls (snitt)', value: `${detail.hr} bpm` });
   if (detail.watts) rows.push({ label: 'Watt (snitt)', value: `${detail.watts} W` });
   if (detail.elevation) rows.push({ label: 'Høydemeter', value: `${detail.elevation} m` });
-  if (detail.intensity) rows.push({ label: 'Intensitet', value: `${Math.round(detail.intensity * 100)}%` });
+  if (detail.intensity) {
+    const pct = detail.intensity > 2 ? Math.round(detail.intensity) : Math.round(detail.intensity * 100);
+    rows.push({ label: 'Intensitet', value: `${pct}%` });
+  }
+  if (detail.indoor !== undefined) rows.push({ label: 'Lokasjon', value: detail.indoor ? 'Inne' : 'Ute' });
 
   const left = Math.max(8, Math.min(anchorX - TOOLTIP_WIDTH / 2, window.innerWidth - TOOLTIP_WIDTH - 8));
 
@@ -491,9 +505,9 @@ function weatherIcon(code: number): string {
   return '⛈️';
 }
 
-function DayCol({ date, chips, color, isWeekStart, weather, onRefresh }: {
+function DayCol({ date, chips, color, isWeekStart, weather, showWeather, onRefresh }: {
   date: Date; chips: WorkoutChip[]; color: string; isWeekStart: boolean;
-  weather?: WeatherData | null; onRefresh: () => void;
+  weather?: WeatherData | null; showWeather?: boolean; onRefresh: () => void;
 }) {
   const today = isToday(date);
   const past = isBefore(date, startOfDay(new Date())) && !today;
@@ -551,10 +565,10 @@ function DayCol({ date, chips, color, isWeekStart, weather, onRefresh }: {
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
-      {/* Header */}
+      {/* Header — fixed height so both athlete rows are identical */}
       <div
         className="px-2 py-1.5 text-center border-b flex-shrink-0"
-        style={{ borderColor: 'var(--border)', backgroundColor: today ? `${color}10` : 'transparent' }}
+        style={{ borderColor: 'var(--border)', backgroundColor: today ? `${color}10` : 'transparent', height: 52 }}
       >
         <div style={{ color: today ? color : 'var(--text-subtle)', fontSize: 10, fontWeight: 500 }}>
           {DAY_SHORT[dayOfWeek]}
@@ -562,15 +576,13 @@ function DayCol({ date, chips, color, isWeekStart, weather, onRefresh }: {
         <div style={{ color: today ? color : 'var(--text-subtle)', fontSize: 11, fontWeight: today ? 700 : 500 }}>
           {format(date, 'd', { locale: nb })}
         </div>
-        {today && weather && (
-          <div style={{ fontSize: 9, color: 'var(--text-subtle)', marginTop: 1, lineHeight: 1.2 }}>
-            {weatherIcon(weather.weathercode)}{weather.temperature}°
-          </div>
-        )}
+        <div style={{ fontSize: 9, color: 'var(--text-subtle)', marginTop: 1, lineHeight: 1.2, height: 13 }}>
+          {showWeather && weather ? `${weatherIcon(weather.weathercode)}${weather.temperature}°` : ''}
+        </div>
       </div>
 
       {/* Slots */}
-      <div className="flex flex-col gap-1 p-1.5" style={{ opacity: moving ? 0.5 : 1 }}>
+      <div className="flex flex-col gap-1 p-1.5 flex-1" style={{ opacity: moving ? 0.5 : 1, minHeight: SLOTS * (CELL_HEIGHT + 4) }}>
         {slots.map((_, i) => {
           const chip = chips[i];
           if (!chip) return (
@@ -598,11 +610,12 @@ function DayCol({ date, chips, color, isWeekStart, weather, onRefresh }: {
 
 // ─── Athlete row ──────────────────────────────────────────────────────────────
 
-function AthleteRow({ name, color, days, activities, events, previewEvent, borderBottom, weather, onRefresh, athleteSlug }: {
+function AthleteRow({ name, color, days, activities, events, previewEvent, borderBottom, forecast, showWeatherRow, onRefresh, athleteSlug }: {
   name: string; color: string; days: Date[];
   activities: Activity[]; events: WorkoutEvent[];
   previewEvent?: WorkoutEvent | null; borderBottom?: boolean;
-  weather?: WeatherData | null;
+  forecast?: WeatherForecast;
+  showWeatherRow?: boolean;
   onRefresh: () => void; athleteSlug: 'mathias' | 'karoline';
 }) {
   return (
@@ -618,6 +631,9 @@ function AthleteRow({ name, color, days, activities, events, previewEvent, borde
       <div className="grid flex-1" style={{ gridTemplateColumns: 'repeat(14, minmax(72px, 1fr))' }}>
         {days.map((date, i) => {
           const dow = (date.getDay() + 6) % 7;
+          const dateStr = format(date, 'yyyy-MM-dd');
+          const dayWeather = forecast?.[dateStr] ?? null;
+          const past = isBefore(date, startOfDay(new Date())) && !isToday(date);
           return (
             <DayCol
               key={i}
@@ -625,7 +641,8 @@ function AthleteRow({ name, color, days, activities, events, previewEvent, borde
               chips={getChips(date, activities, events, athleteSlug, previewEvent)}
               color={color}
               isWeekStart={dow === 0 && i > 0}
-              weather={isToday(date) ? weather : null}
+              weather={dayWeather}
+              showWeather={showWeatherRow && !past}
               onRefresh={onRefresh}
             />
           );
@@ -637,7 +654,7 @@ function AthleteRow({ name, color, days, activities, events, previewEvent, borde
 
 // ─── Calendar ─────────────────────────────────────────────────────────────────
 
-export function Calendar({ mathiasActivities, mathiasEvents, karolineActivities, karolineEvents, preview, weather, onRefresh }: CalendarProps) {
+export function Calendar({ mathiasActivities, mathiasEvents, karolineActivities, karolineEvents, preview, forecast, onRefresh }: CalendarProps) {
   const days = buildDays();
   const mathiasPreview = preview?.athleteSlug === 'mathias' ? preview.workout : null;
   const karolinePreview = preview?.athleteSlug === 'karoline' ? preview.workout : null;
@@ -651,10 +668,10 @@ export function Calendar({ mathiasActivities, mathiasEvents, karolineActivities,
         <div style={{ minWidth: 1050 }}>
           <AthleteRow name="Mathias" athleteSlug="mathias" color="#16a34a" days={days}
             activities={mathiasActivities} events={mathiasEvents} previewEvent={mathiasPreview}
-            borderBottom weather={weather} onRefresh={onRefresh} />
+            borderBottom forecast={forecast} showWeatherRow onRefresh={onRefresh} />
           <AthleteRow name="Karoline" athleteSlug="karoline" color="#2563eb" days={days}
             activities={karolineActivities} events={karolineEvents} previewEvent={karolinePreview}
-            weather={weather} onRefresh={onRefresh} />
+            forecast={forecast} showWeatherRow onRefresh={onRefresh} />
         </div>
       </div>
     </div>

@@ -1,6 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Activity, WorkoutEvent, Wellness, WeatherData } from "./types";
 import { formatDate, formatTime, formatDistance, today, daysAgo } from "./date-utils";
+import { MATHIAS_PROGRAM } from "./programs/parse-program";
+import { getCurrentProgramWeek, buildProgramSummary } from "./programs/program-utils";
+
+export function buildProgramContext(athleteSlug: string): string {
+  if (athleteSlug !== "mathias") return "";
+  const week = getCurrentProgramWeek(MATHIAS_PROGRAM, new Date());
+  return buildProgramSummary(MATHIAS_PROGRAM, week);
+}
 
 export const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -92,7 +100,17 @@ Eksempel styrkeøkt for triatlet:
 {"workout_suggestion":true,"start_date_local":"${tomorrowIso}T07:00:00","type":"WeightTraining","name":"Styrke: Funksjonell (triatlon)","moving_time":2700,"icu_training_load":40,"description":"3 runder, 60 sek hvile mellom øvelser\\n\\n- Rumensk markløft: 3x10\\n- Bulgarsk splittknebøy: 3x8 per ben\\n- Planke med rotasjon: 3x10\\n- Banded pull-apart: 3x15\\n- Hip thrust: 3x12\\n- Pallof press: 3x10 per side"}
 \`\`\`
 
-Navn for styrkeøkter: "Styrke: Funksjonell (triatlon)", "Styrke: Overkropp/Skulder", "Styrke: Ben og hofte", "Styrke: Core og stabilitet".`;
+Navn for styrkeøkter: "Styrke: Funksjonell (triatlon)", "Styrke: Overkropp/Skulder", "Styrke: Ben og hofte", "Styrke: Core og stabilitet".
+
+## Mathias — Intensitetssoner (referanse)
+| Sone | Watt | HF bpm | Løpspace | Svømpace |
+|------|------|--------|----------|----------|
+| I-1 | <183W | 109–129 | >5:05/km | >2:50 |
+| I-2 | 183–210W | 130–150 | 4:35–5:05/km | 2:33–2:50 |
+| I-3 | 210–229W | 151–171 | 4:10–4:35/km | 2:25–2:33 |
+| I-4 | 229–260W | 172–182 | 3:42–4:10/km | 2:15–2:25 |
+| I-5 | >260W | 183+ | <3:42/km | <2:15 |
+FTP=269W · CS=3:56/km · CSS=2:25/100m`;
 }
 
 export function buildContext(
@@ -162,11 +180,18 @@ export function buildDailyAnalysisPrompt(
   );
   const latestWellness = wellness.length > 0 ? wellness[wellness.length - 1] : null;
 
+  const programCtx = buildProgramContext(athleteSlug);
+
   let prompt = `Du er en treningscoach. Analyser dataene nedenfor og returner BARE et JSON-objekt (ingen markdown, ingen tekst utenfor JSON).
 
 Utøver: ${athleteName}
 Dato i dag: ${todayStr}
 `;
+
+  if (programCtx) {
+    prompt += `\n${programCtx}\n`;
+  }
+
 
   if (latestWellness) {
     prompt += `\nDagsform: CTL=${Math.round(latestWellness.ctl ?? 0)}, ATL=${Math.round(latestWellness.atl ?? 0)}, TSB=${Math.round(latestWellness.tsb ?? 0)}`;
@@ -218,7 +243,7 @@ Dato i dag: ${todayStr}
 
   prompt += `
 Instruksjoner:
-1. weekType: Bestem type treningsuke basert på kommende plan (f.eks. "Restitusjonsuke", "Oppbyggingsuke", "Toppuke", "Konkurranseuke", "Rolig uke"). Maks 2 ord.
+1. weekType: Bruk programfasen direkte fra konteksten om tilgjengelig (f.eks. "Build 1: Restitusjon"). Ellers bestem basert på kommende plan. Maks 4 ord.
 2. summary: Kommenter gårsdagens økt KORT (maks 2 setninger). Hvis hviledag: si noe positivt om hvile og hva som venter. ALDRI kall hviledag et "avvik fra plan" — hvile ER planen.
 3. nutritionAdvice: Gi en KORT kostholdsanbefaling for i dag (maks 1 setning). Fokuser på praktiske tips.
 4. weatherNote: Bare hvis regn (kode 51-82) eller sterk vind (>10 m/s) treffer planlagt utendørsøkt (Run/Ride). Null ellers.
@@ -243,6 +268,7 @@ Returner BARE dette JSON-objektet:
 
 export function buildShortContext(
   athleteName: string,
+  athleteSlug: string,
   events: WorkoutEvent[],
   wellness: Wellness[]
 ): string {
@@ -254,6 +280,10 @@ export function buildShortContext(
   const next5 = events.slice(0, 5);
   if (next5.length > 0) {
     ctx += "Neste 5 planlagte: " + next5.map((e) => `${e.type} ${formatDate(e.start_date_local)}`).join(", ") + "\n";
+  }
+  const programCtx = buildProgramContext(athleteSlug);
+  if (programCtx) {
+    ctx += "\n" + programCtx + "\n";
   }
   return ctx;
 }

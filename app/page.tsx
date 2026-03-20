@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { Calendar } from '@/components/Calendar';
 import { DayModule } from '@/components/DayModule';
 import { WorkoutWizard, type SuccessBanner, type WorkoutPreview } from '@/components/WorkoutWizard';
-import type { Activity, WorkoutEvent, WeatherData } from '@/lib/types';
+import type { Activity, WorkoutEvent, WeatherData, WeatherForecast } from '@/lib/types';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -90,6 +90,7 @@ export default function Home() {
   const [karolineEvents, setKarolineEvents] = useState<WorkoutEvent[]>([]);
   const [calLoading, setCalLoading] = useState(true);
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [forecast, setForecast] = useState<WeatherForecast>({});
   const [success, setSuccess] = useState<SuccessBanner | null>(null);
   const [preview, setPreview] = useState<WorkoutPreview | null>(null);
 
@@ -108,7 +109,12 @@ export default function Home() {
 
   useEffect(() => {
     refresh();
-    fetch('/api/weather').then((r) => r.json()).then((d) => { if (!d.error) setWeather(d); }).catch(() => {});
+    fetch('/api/weather').then((r) => r.json()).then((d) => {
+      if (!d.error) {
+        setWeather(d.today ?? null);
+        setForecast(d.forecast ?? {});
+      }
+    }).catch(() => {});
   }, [refresh]);
 
   function handleSuccess(banner: SuccessBanner) {
@@ -141,6 +147,7 @@ export default function Home() {
           karolineEvents={karolineEvents}
           preview={preview}
           weather={weather}
+          forecast={forecast}
           onRefresh={refresh}
         />
       )}

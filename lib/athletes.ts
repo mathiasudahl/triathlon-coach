@@ -7,6 +7,7 @@ export const ATHLETES: Record<"mathias" | "karoline", Athlete> = {
     name: "Mathias",
     color: "#16a34a",
     slug: "mathias",
+    programSlug: "mathias",
   },
   karoline: {
     id: process.env.KAROLINE_ATHLETE_ID!,

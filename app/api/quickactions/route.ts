@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
 
   const context = buildShortContext(
     athlete.name,
+    athleteSlug,
     events.status === "fulfilled" ? events.value : [],
     wellness.status === "fulfilled" ? wellness.value : []
   );

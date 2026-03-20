@@ -104,6 +104,8 @@ function AthletePanel({ slug, name, color, activities, events, weather, onRefres
   const [adaptLoading, setAdaptLoading] = useState(false);
   const [adaptResult, setAdaptResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushResult, setPushResult] = useState<string | null>(null);
 
   const today = todayStr();
   const yesterday = yesterdayStr();
@@ -148,6 +150,35 @@ function AthletePanel({ slug, name, color, activities, events, weather, onRefres
     runAnalysis(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handlePush(mode: 'week' | 'month') {
+    setPushLoading(true);
+    setPushResult(null);
+    try {
+      const res = await fetch('/api/push-week', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ athleteSlug: slug, mode }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      const { added, skipped, weekLabels } = data as { added: number; skipped: number; weekLabels: string[] };
+      const label = weekLabels?.join(', ') ?? '';
+      if (added === 0) {
+        setPushResult(`Ingen nye økter — ${skipped} allerede planlagt (${label})`);
+      } else {
+        setPushResult(`${added} økt${added !== 1 ? 'er' : ''} lagt til for ${label}${skipped > 0 ? ` (${skipped} hoppet over)` : ''}`);
+        onRefresh();
+      }
+    } catch (e) {
+      setPushResult(`Feil: ${String(e)}`);
+    } finally {
+      setPushLoading(false);
+    }
+  }
 
   async function handleAdaptWeek() {
     if (!analysis?.adaptSuggestion) return;
@@ -314,15 +345,40 @@ function AthletePanel({ slug, name, color, activities, events, weather, onRefres
         {/* Spacer — pushes button to bottom */}
         <div className="flex-1" />
 
-        {/* Analyser-knapp — diskret, alltid nederst */}
-        <button
-          onClick={() => runAnalysis(true)}
-          disabled={loading}
-          className="self-start opacity-30 hover:opacity-70 transition-opacity disabled:opacity-20"
-          style={{ fontSize: 9, color: 'var(--text-subtle)', letterSpacing: '0.04em' }}
-        >
-          {loading ? '↻ analyserer...' : '↻ analyser på nytt'}
-        </button>
+        {/* Bunn: analyser-knapp + push-knapper for Mathias */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => runAnalysis(true)}
+            disabled={loading}
+            className="opacity-30 hover:opacity-70 transition-opacity disabled:opacity-20"
+            style={{ fontSize: 9, color: 'var(--text-subtle)', letterSpacing: '0.04em' }}
+          >
+            {loading ? '↻ analyserer...' : '↻ analyser på nytt'}
+          </button>
+          {slug === 'mathias' && (
+            <>
+              <button
+                onClick={() => handlePush('week')}
+                disabled={pushLoading}
+                className="opacity-30 hover:opacity-70 transition-opacity disabled:opacity-20"
+                style={{ fontSize: 9, color: 'var(--text-subtle)', letterSpacing: '0.04em' }}
+              >
+                {pushLoading ? '↑ pusher...' : '↑ push neste uke'}
+              </button>
+              <button
+                onClick={() => handlePush('month')}
+                disabled={pushLoading}
+                className="opacity-30 hover:opacity-70 transition-opacity disabled:opacity-20"
+                style={{ fontSize: 9, color: 'var(--text-subtle)', letterSpacing: '0.04em' }}
+              >
+                ↑ push neste måned
+              </button>
+            </>
+          )}
+        </div>
+        {pushResult && (
+          <p className="opacity-60 leading-snug" style={{ fontSize: 10 }}>{pushResult}</p>
+        )}
       </div>
     </div>
   );

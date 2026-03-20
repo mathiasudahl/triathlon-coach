@@ -4,8 +4,45 @@ export interface Athlete {
   name: string;
   color: string;
   slug: "mathias" | "karoline";
+  programSlug?: string;
   goals?: AthleteGoals;
   prs?: AthletePRs;
+}
+
+export interface TrainingProgram {
+  athleteSlug: "mathias" | "karoline";
+  targetRace: string;
+  targetDate: string;
+  profile: AthleteProfile;
+  weeks: ProgramWeek[];
+}
+
+export interface AthleteProfile {
+  ftp: number;
+  cs: string;
+  css: string;
+  vo2max: number;
+}
+
+export interface ProgramWeek {
+  weekNumber: number;
+  phase: string;
+  weekType: string;
+  startDate: string;
+  endDate: string;
+  workouts: ProgramWorkout[];
+}
+
+export interface ProgramWorkout {
+  dayOfWeek: number;
+  timeOfDay: "AM" | "PM" | null;
+  type: "Ride" | "Run" | "Swim" | "WeightTraining";
+  name: string;
+  durationMinutes: number;
+  tss?: number;
+  description: string;
+  optional: boolean;
+  indoor: boolean | null; // true=inne, false=ute, null=ukjent
 }
 
 export interface AthleteGoals {
@@ -40,6 +77,8 @@ export interface Activity {
   average_watts?: number;
   total_elevation_gain?: number;
   icu_intensity?: number;
+  indoor_workout?: boolean;
+  trainer?: boolean;
 }
 
 export interface WorkoutEvent {
@@ -51,6 +90,7 @@ export interface WorkoutEvent {
   moving_time?: number;
   icu_training_load?: number;
   description?: string;
+  indoor_workout?: boolean;
 }
 
 export interface Wellness {
@@ -73,6 +113,8 @@ export interface WeatherData {
   weathercode: number;
   description: string;
 }
+
+export type WeatherForecast = Record<string, WeatherData>; // keyed by "yyyy-MM-dd"
 
 export interface FitnessPoint {
   date: string;
