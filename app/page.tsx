@@ -126,6 +126,7 @@ export default function Home() {
           karolineActivities={karolineActivities}
           karolineEvents={karolineEvents}
           preview={preview}
+          onRefresh={refresh}
         />
       )}
 
