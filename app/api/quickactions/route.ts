@@ -15,7 +15,7 @@ const QUICK_PROMPTS: Record<string, (sport?: string) => string> = {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { athleteSlug, action, sport, athleteId: directAthleteId, apiKey: directApiKey, anthropicKey, athleteName: directName } = body;
+  const { athleteSlug, action, sport, customPrompt, athleteId: directAthleteId, apiKey: directApiKey, anthropicKey, athleteName: directName } = body;
 
   let athleteId: string;
   let apiKey: string;
@@ -52,12 +52,16 @@ export async function POST(req: NextRequest) {
     wellness.status === "fulfilled" ? wellness.value : []
   );
 
-  const promptFn = QUICK_PROMPTS[action];
-  if (!promptFn) {
-    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+  let userPrompt: string;
+  if (customPrompt) {
+    userPrompt = customPrompt;
+  } else {
+    const promptFn = QUICK_PROMPTS[action];
+    if (!promptFn) {
+      return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+    }
+    userPrompt = promptFn(sport);
   }
-
-  const userPrompt = promptFn(sport);
   const systemPrompt = buildSystemPrompt() + "\n\n" + context;
 
   try {

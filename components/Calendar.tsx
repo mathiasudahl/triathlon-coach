@@ -158,13 +158,19 @@ function getChips(
 
 // ─── Tooltip portal ───────────────────────────────────────────────────────────
 
-const TOOLTIP_WIDTH = 240;
+const TOOLTIP_WIDTH = 268;
 
-interface SavePayload { name: string; date: string; durationMin: number | null; tss: number | null; }
+interface SavePayload { name: string; date: string; durationMin: number | null; tss: number | null; description: string | null; }
+
+function hasIntervals(description: string | undefined): boolean {
+  if (!description) return false;
+  return /\d+x/i.test(description);
+}
 
 // anchorY = top edge of chip (pixels from top of document) — popup renders above chip
-function TooltipPortal({ detail, eventDate, color, anchorX, anchorY, canEdit, onMouseEnter, onMouseLeave, onDelete, onSave, deleting }: {
-  detail: ChipDetail; eventDate: string; color: string; anchorX: number; anchorY: number;
+function TooltipPortal({ detail, eventDate, eventId, athleteSlug, color, anchorX, anchorY, canEdit, onMouseEnter, onMouseLeave, onDelete, onSave, deleting }: {
+  detail: ChipDetail; eventDate: string; eventId?: number; athleteSlug?: string;
+  color: string; anchorX: number; anchorY: number;
   canEdit: boolean;
   onMouseEnter: () => void; onMouseLeave: () => void;
   onDelete: () => void; onSave: (p: SavePayload) => void; deleting: boolean;
@@ -174,7 +180,12 @@ function TooltipPortal({ detail, eventDate, color, anchorX, anchorY, canEdit, on
   const [editDate, setEditDate] = useState(eventDate);
   const [editDur, setEditDur] = useState(detail.duration ? String(Math.round(detail.duration / 60)) : '');
   const [editTss, setEditTss] = useState(detail.tss ? String(detail.tss) : '');
+  const [editDesc, setEditDesc] = useState(detail.description ?? '');
   const [saving, setSaving] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const withIntervals = hasIntervals(detail.description);
 
   const rows: { label: string; value: string }[] = [];
   if (detail.duration) rows.push({ label: 'Varighet', value: formatDuration(detail.duration) });
@@ -189,7 +200,11 @@ function TooltipPortal({ detail, eventDate, color, anchorX, anchorY, canEdit, on
   }
   if (detail.indoor !== undefined) rows.push({ label: 'Lokasjon', value: detail.indoor ? 'Inne' : 'Ute' });
 
+  // Clamp left so popup stays within viewport; prefer centered on chip
   const left = Math.max(8, Math.min(anchorX - TOOLTIP_WIDTH / 2, window.innerWidth - TOOLTIP_WIDTH - 8));
+  // Render below chip if too close to top of viewport
+  const spaceAbove = anchorY - window.scrollY;
+  const renderBelow = spaceAbove < 260;
 
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '3px 6px', borderRadius: 5, fontSize: 11,
@@ -204,9 +219,48 @@ function TooltipPortal({ detail, eventDate, color, anchorX, anchorY, canEdit, on
       date: editDate,
       durationMin: editDur ? Number(editDur) : null,
       tss: editTss ? Number(editTss) : null,
+      description: editDesc || null,
     });
     setSaving(false);
     setEditing(false);
+  }
+
+  async function handleQuickAction(action: 'add-intervals' | 'more-intervals' | 'longer-blocks' | 'extend') {
+    setAiLoading(true);
+    setAiError(null);
+
+    const config = typeof window !== 'undefined' ? (() => { try { return JSON.parse(localStorage.getItem('user-config') ?? '{}'); } catch { return {}; } })() : {};
+    const isPreset = config.mode === 'preset';
+
+    const actionPrompts: Record<string, string> = {
+      'add-intervals': `Legg til en intervallblokk i denne øktbeskrivelsen. Behold eksisterende oppvarming og nedkjøling. Returner BARE den oppdaterte workout-builder-teksten, ingen annen tekst:\n\n${detail.description ?? ''}`,
+      'more-intervals': `Legg til én ekstra repetisjonsrunde i alle intervallblokker i denne øktbeskrivelsen (f.eks. 4x → 5x). Returner BARE den oppdaterte workout-builder-teksten, ingen annen tekst:\n\n${detail.description ?? ''}`,
+      'longer-blocks': `Øk varigheten på hvert intervall i alle intervallblokker med ca. 20% (rund til nærmeste hele minutt eller 30 sek). Returner BARE den oppdaterte workout-builder-teksten, ingen annen tekst:\n\n${detail.description ?? ''}`,
+      'extend': `Utvid denne øktbeskrivelsen ved å legge til 15–20 minutter ekstra rolig arbeid (tilpasset sport). Behold eksisterende struktur. Returner BARE den oppdaterte workout-builder-teksten, ingen annen tekst:\n\n${detail.description ?? `- ${editDur ?? 60}m rolig`}`,
+    };
+
+    const body = isPreset
+      ? { athleteSlug: athleteSlug ?? 'mathias', action: 'edit_workout', sport: detail.type }
+      : { athleteId: config.athleteId, apiKey: config.apiKey, anthropicKey: config.anthropicKey, athleteName: config.name, action: 'edit_workout', sport: detail.type };
+
+    try {
+      const res = await fetch('/api/quickactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, customPrompt: actionPrompts[action] }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const text: string = data.text ?? '';
+      // Strip any accidental markdown fences
+      const clean = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+      setEditDesc(clean);
+      setEditing(true);
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'Feil');
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   return createPortal(
@@ -215,8 +269,8 @@ function TooltipPortal({ detail, eventDate, color, anchorX, anchorY, canEdit, on
       onMouseLeave={onMouseLeave}
       style={{
         position: 'absolute',
-        top: anchorY - 4,
-        transform: 'translateY(-100%)',
+        top: renderBelow ? anchorY + CELL_HEIGHT + 4 : anchorY - 4,
+        transform: renderBelow ? undefined : 'translateY(-100%)',
         left,
         width: TOOLTIP_WIDTH,
         zIndex: 9999,
@@ -235,12 +289,12 @@ function TooltipPortal({ detail, eventDate, color, anchorX, anchorY, canEdit, on
             <span>{sportIcon(detail.type)}</span>
             <span style={{ fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{detail.name}</span>
           </div>
-          {canEdit && !editing && (
+          {canEdit && (
             <button
-              onClick={() => setEditing(true)}
-              style={{ flexShrink: 0, fontSize: 10, color: color, opacity: 0.7, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}
+              onClick={() => setEditing((v) => !v)}
+              style={{ flexShrink: 0, fontSize: 10, color, opacity: 0.7, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}
             >
-              Rediger
+              {editing ? 'Lukk' : 'Rediger'}
             </button>
           )}
         </div>
@@ -254,18 +308,18 @@ function TooltipPortal({ detail, eventDate, color, anchorX, anchorY, canEdit, on
         </div>
       </div>
 
-      {/* Edit form */}
-      {editing ? (
-        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {/* Edit form — inline, no layout shift */}
+      {editing && (
+        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, borderBottom: `1px solid ${color}15` }}>
           <div>
             <div style={{ color: 'var(--text-subtle)', fontSize: 9, marginBottom: 2 }}>Navn</div>
             <input style={inputStyle} value={editName} onChange={e => setEditName(e.target.value)} />
           </div>
-          <div>
-            <div style={{ color: 'var(--text-subtle)', fontSize: 9, marginBottom: 2 }}>Dato</div>
-            <input style={inputStyle} type="date" value={editDate} onChange={e => setEditDate(e.target.value)} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+            <div>
+              <div style={{ color: 'var(--text-subtle)', fontSize: 9, marginBottom: 2 }}>Dato</div>
+              <input style={inputStyle} type="date" value={editDate} onChange={e => setEditDate(e.target.value)} />
+            </div>
             <div>
               <div style={{ color: 'var(--text-subtle)', fontSize: 9, marginBottom: 2 }}>Varighet (min)</div>
               <input style={inputStyle} type="number" min="1" value={editDur} onChange={e => setEditDur(e.target.value)} />
@@ -275,6 +329,52 @@ function TooltipPortal({ detail, eventDate, color, anchorX, anchorY, canEdit, on
               <input style={inputStyle} type="number" min="0" value={editTss} onChange={e => setEditTss(e.target.value)} />
             </div>
           </div>
+          <div>
+            <div style={{ color: 'var(--text-subtle)', fontSize: 9, marginBottom: 2 }}>Øktstruktur</div>
+            <textarea
+              style={{ ...inputStyle, resize: 'vertical', minHeight: 80, fontFamily: 'monospace', lineHeight: 1.5 }}
+              value={editDesc}
+              onChange={e => setEditDesc(e.target.value)}
+              placeholder="Workout-builder-syntaks…"
+            />
+          </div>
+
+          {/* KI hurtighandlinger */}
+          <div>
+            <div style={{ color: 'var(--text-subtle)', fontSize: 9, marginBottom: 4 }}>KI-justeringer</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {withIntervals ? (
+                <>
+                  <button onClick={() => handleQuickAction('more-intervals')} disabled={aiLoading}
+                    style={{ fontSize: 9, padding: '3px 8px', borderRadius: 5, cursor: aiLoading ? 'not-allowed' : 'pointer', backgroundColor: `${color}12`, color, border: `1px solid ${color}25`, opacity: aiLoading ? 0.5 : 1 }}>
+                    + Én runde til
+                  </button>
+                  <button onClick={() => handleQuickAction('longer-blocks')} disabled={aiLoading}
+                    style={{ fontSize: 9, padding: '3px 8px', borderRadius: 5, cursor: aiLoading ? 'not-allowed' : 'pointer', backgroundColor: `${color}12`, color, border: `1px solid ${color}25`, opacity: aiLoading ? 0.5 : 1 }}>
+                    Lengre intervaller
+                  </button>
+                  <button onClick={() => handleQuickAction('add-intervals')} disabled={aiLoading}
+                    style={{ fontSize: 9, padding: '3px 8px', borderRadius: 5, cursor: aiLoading ? 'not-allowed' : 'pointer', backgroundColor: `${color}12`, color, border: `1px solid ${color}25`, opacity: aiLoading ? 0.5 : 1 }}>
+                    + Ny intervallblokk
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => handleQuickAction('extend')} disabled={aiLoading}
+                    style={{ fontSize: 9, padding: '3px 8px', borderRadius: 5, cursor: aiLoading ? 'not-allowed' : 'pointer', backgroundColor: `${color}12`, color, border: `1px solid ${color}25`, opacity: aiLoading ? 0.5 : 1 }}>
+                    Forleng økten
+                  </button>
+                  <button onClick={() => handleQuickAction('add-intervals')} disabled={aiLoading}
+                    style={{ fontSize: 9, padding: '3px 8px', borderRadius: 5, cursor: aiLoading ? 'not-allowed' : 'pointer', backgroundColor: `${color}12`, color, border: `1px solid ${color}25`, opacity: aiLoading ? 0.5 : 1 }}>
+                    + Legg til intervaller
+                  </button>
+                </>
+              )}
+            </div>
+            {aiLoading && <div style={{ fontSize: 9, color: 'var(--text-subtle)', marginTop: 4 }}>KI justerer…</div>}
+            {aiError && <div style={{ fontSize: 9, color: '#dc2626', marginTop: 4 }}>{aiError}</div>}
+          </div>
+
           <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
             <button
               onClick={handleSave}
@@ -299,48 +399,46 @@ function TooltipPortal({ detail, eventDate, color, anchorX, anchorY, canEdit, on
             </button>
           </div>
         </div>
-      ) : (
-        <>
-          {/* Stats */}
-          {rows.length > 0 && (
-            <div style={{ padding: '8px 12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
-              {rows.map((r) => (
-                <div key={r.label}>
-                  <div style={{ color: 'var(--text-subtle)', fontSize: 9 }}>{r.label}</div>
-                  <div style={{ color: 'var(--text)', fontSize: 11, fontWeight: 600 }}>{r.value}</div>
-                </div>
-              ))}
-            </div>
-          )}
+      )}
 
-          {/* Description */}
-          {detail.description && (
-            <div style={{ borderTop: `1px solid ${color}15`, padding: '8px 12px' }}>
-              <div style={{ color: 'var(--text-subtle)', fontSize: 9, marginBottom: 3 }}>Øktstruktur</div>
-              <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', color: 'var(--text)', fontSize: 9, lineHeight: 1.5, margin: 0 }}>
-                {detail.description}
-              </pre>
+      {/* Stats — always visible */}
+      {rows.length > 0 && (
+        <div style={{ padding: '8px 12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
+          {rows.map((r) => (
+            <div key={r.label}>
+              <div style={{ color: 'var(--text-subtle)', fontSize: 9 }}>{r.label}</div>
+              <div style={{ color: 'var(--text)', fontSize: 11, fontWeight: 600 }}>{r.value}</div>
             </div>
-          )}
+          ))}
+        </div>
+      )}
 
-          {/* Actions */}
-          {canEdit && (
-            <div style={{ borderTop: `1px solid ${color}15`, padding: '8px 12px', display: 'flex', gap: 6 }}>
-              <button
-                onClick={onDelete}
-                disabled={deleting}
-                style={{
-                  flex: 1, padding: '5px 0', borderRadius: 6, fontSize: 11, fontWeight: 500,
-                  backgroundColor: '#dc262610', color: '#dc2626',
-                  border: '1px solid #dc262625', cursor: deleting ? 'not-allowed' : 'pointer',
-                  opacity: deleting ? 0.6 : 1,
-                }}
-              >
-                {deleting ? 'Sletter…' : 'Slett økt'}
-              </button>
-            </div>
-          )}
-        </>
+      {/* Description — always visible when not editing */}
+      {!editing && detail.description && (
+        <div style={{ borderTop: `1px solid ${color}15`, padding: '8px 12px' }}>
+          <div style={{ color: 'var(--text-subtle)', fontSize: 9, marginBottom: 3 }}>Øktstruktur</div>
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', color: 'var(--text)', fontSize: 9, lineHeight: 1.5, margin: 0 }}>
+            {detail.description}
+          </pre>
+        </div>
+      )}
+
+      {/* Slett */}
+      {canEdit && (
+        <div style={{ borderTop: `1px solid ${color}15`, padding: '8px 12px', display: 'flex', gap: 6 }}>
+          <button
+            onClick={onDelete}
+            disabled={deleting}
+            style={{
+              flex: 1, padding: '5px 0', borderRadius: 6, fontSize: 11, fontWeight: 500,
+              backgroundColor: '#dc262610', color: '#dc2626',
+              border: '1px solid #dc262625', cursor: deleting ? 'not-allowed' : 'pointer',
+              opacity: deleting ? 0.6 : 1,
+            }}
+          >
+            {deleting ? 'Sletter…' : 'Slett økt'}
+          </button>
+        </div>
       )}
     </div>,
     document.body
@@ -406,6 +504,7 @@ function Chip({ chip, color, date, onDelete, onRefresh }: {
     if (p.date) update.start_date_local = `${p.date}T09:00:00`;
     if (p.durationMin !== null) update.moving_time = p.durationMin * 60;
     if (p.tss !== null) update.icu_training_load = p.tss;
+    if (p.description !== null) update.description = p.description;
     await fetch('/api/events', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
