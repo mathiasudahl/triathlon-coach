@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { parseWorkoutFromText } from '@/lib/parse-workout';
 import { AddToIntervalsButton } from '@/components/ai/AddToIntervalsButton';
 import type { WorkoutEvent, UserConfig } from '@/lib/types';
-import type { AthleteAwayResult, AwayPlanResult } from '@/app/api/away-plan/route';
+import type { AthleteAwayResult, AwayPlanResult } from '@/lib/types';
 
 type AthleteSlug = 'mathias' | 'karoline';
 type Step = 'action' | 'variant' | 'athlete' | 'sport' | 'result' | 'away_setup' | 'away_result';

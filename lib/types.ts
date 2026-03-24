@@ -143,3 +143,17 @@ export interface UserConfig {
   apiKey: string;
   anthropicKey?: string;
 }
+
+export interface AwayPlanResult {
+  eventId: number;
+  action: "keep" | "replace";
+  originalEvent: WorkoutEvent;
+  newWorkout?: WorkoutEvent;
+}
+
+export interface AthleteAwayResult {
+  athleteSlug: string;
+  athleteName: string;
+  athleteColor: string;
+  results: AwayPlanResult[];
+}
