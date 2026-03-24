@@ -890,13 +890,13 @@ function OfflineCell({ date, onAdd }: {
 
       {/* Hover actions — fill remaining height */}
       {hovered && !step && (
-        <div style={{ display: 'flex', flex: '0 0 auto', marginTop: 4 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: '0 0 auto', marginTop: 4 }}>
           {(['add', 'replace'] as const).map((action) => (
             <button
               key={action}
               onClick={() => setStep(action)}
               style={{
-                flex: 1, fontSize: 9, padding: '4px 0', borderRadius: 0, cursor: 'pointer',
+                width: '100%', fontSize: 9, padding: '4px 0', borderRadius: 0, cursor: 'pointer',
                 backgroundImage: hatchUrl,
                 backgroundColor: 'transparent',
                 color: OFFLINE_COLOR, border: 'none', fontWeight: 600,

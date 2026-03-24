@@ -553,7 +553,7 @@ export function WorkoutWizard({ config, onSuccess, onPreview }: Props) {
           <BackButton onClick={() => setStep('action')} />
           <Breadcrumb parts={breadcrumb} />
           <SectionLabel>Type ekstraøkt</SectionLabel>
-          <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
             {EXTRA_VARIANTS.map((v) => (
               <ActionCard
                 key={v.id}
@@ -579,7 +579,7 @@ export function WorkoutWizard({ config, onSuccess, onPreview }: Props) {
               <span className="text-sm" style={{ color: 'var(--text-subtle)' }}>Fjerner økter…</span>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
               {ATHLETES.map((a) => (
                 <ActionCard
                   key={a.slug}
