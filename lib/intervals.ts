@@ -66,7 +66,12 @@ export async function fetchWellness(
     `/athlete/${athleteId}/wellness?${params}`
   );
   if (!res.ok) throw new Error(`Wellness fetch failed: ${res.status}`);
-  return res.json();
+  const data: Wellness[] = await res.json();
+  // Intervals.icu does not return tsb — compute it as CTL - ATL
+  return data.map((w) => ({
+    ...w,
+    tsb: w.tsb ?? (w.ctl != null && w.atl != null ? w.ctl - w.atl : undefined),
+  }));
 }
 
 export async function createEvent(
