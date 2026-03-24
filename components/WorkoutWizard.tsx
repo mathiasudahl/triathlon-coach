@@ -540,7 +540,7 @@ export function WorkoutWizard({ config, onSuccess, onPreview }: Props) {
                 label={a.label}
                 description={a.description}
                 onClick={() => pickAction(a.id, a.label)}
-                fullWidth={ACTIONS.length % 2 !== 0 && i === ACTIONS.length - 1}
+                fullWidth={false}
               />
             ))}
           </div>

@@ -269,9 +269,7 @@ export default function Home() {
         className="rounded-2xl px-6 py-6"
         style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
       >
-        <div className="max-w-xl">
           <WorkoutWizard config={config} onSuccess={handleSuccess} onPreview={setPreview} />
-        </div>
       </div>
     </div>
   );
