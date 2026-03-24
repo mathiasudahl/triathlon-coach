@@ -276,7 +276,7 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
     }
   }
 
-  async function handleAiPush(mode: 'week' | 'month') {
+  async function handleAiPush(mode: 'week' | 'month' | 'current_week') {
     if (!athlete.hasAI) return;
     setPushLoading(true);
     setPushResult(null);
@@ -549,12 +549,20 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
           {!athlete.hasProgram && athlete.hasAI && (
             <>
               <button
+                onClick={() => handleAiPush('current_week')}
+                disabled={pushLoading}
+                className="opacity-30 hover:opacity-70 transition-opacity disabled:opacity-20"
+                style={{ fontSize: 9, color: 'var(--text-subtle)', letterSpacing: '0.04em' }}
+              >
+                {pushLoading ? '↑ genererer...' : '↑ Fyll inn denne uken'}
+              </button>
+              <button
                 onClick={() => handleAiPush('week')}
                 disabled={pushLoading}
                 className="opacity-30 hover:opacity-70 transition-opacity disabled:opacity-20"
                 style={{ fontSize: 9, color: 'var(--text-subtle)', letterSpacing: '0.04em' }}
               >
-                {pushLoading ? '↑ genererer...' : '↑ Generer plan: uke'}
+                ↑ Generer plan: neste uke
               </button>
               <button
                 onClick={() => handleAiPush('month')}

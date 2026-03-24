@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { makeAnthropic, buildSystemPrompt, buildShortContext } from "@/lib/ai";
-import { fetchEvents, fetchWellness } from "@/lib/intervals";
+import { fetchActivities, fetchEvents, fetchWellness } from "@/lib/intervals";
 import { getAthlete } from "@/lib/athletes";
-import { today, daysAgo, daysFromNow } from "@/lib/date-utils";
+import { today, daysAgo, daysFromNow, formatDate, formatTime, formatDistance } from "@/lib/date-utils";
 
 const QUICK_PROMPTS: Record<string, (sport?: string) => string> = {
   extra_today: (sport) =>
@@ -40,21 +40,50 @@ export async function POST(req: NextRequest) {
   const client = makeAnthropic(anthropicKey);
   const t = today();
 
-  const [events, wellness] = await Promise.allSettled([
-    fetchEvents(athleteId, apiKey, t, daysFromNow(5)),
-    fetchWellness(athleteId, apiKey, daysAgo(1), t),
+  const [events, wellness, activities] = await Promise.allSettled([
+    fetchEvents(athleteId, apiKey, t, daysFromNow(7)),
+    fetchWellness(athleteId, apiKey, daysAgo(7), t),
+    fetchActivities(athleteId, apiKey, daysAgo(7), t, 10),
   ]);
 
-  const context = buildShortContext(
-    athleteName,
-    resolvedSlug,
-    events.status === "fulfilled" ? events.value : [],
-    wellness.status === "fulfilled" ? wellness.value : []
-  );
+  const eventsData = events.status === "fulfilled" ? events.value : [];
+  const wellnessData = wellness.status === "fulfilled" ? wellness.value : [];
+  const activitiesData = activities.status === "fulfilled" ? activities.value : [];
+
+  const context = buildShortContext(athleteName, resolvedSlug, eventsData, wellnessData);
+
+  // Build a richer week context for workout-editing actions
+  function buildWeekContext(): string {
+    let ctx = "";
+    const latestWellness = wellnessData[wellnessData.length - 1];
+    if (latestWellness) {
+      ctx += `Dagsform: CTL=${Math.round(latestWellness.ctl ?? 0)}, ATL=${Math.round(latestWellness.atl ?? 0)}, TSB=${Math.round(latestWellness.tsb ?? 0)}\n`;
+    }
+    if (activitiesData.length > 0) {
+      ctx += "Siste aktiviteter:\n";
+      for (const a of activitiesData.slice(-5)) {
+        const parts = [formatDate(a.start_date_local), a.type, a.name, formatTime(a.moving_time)];
+        if (a.distance > 0) parts.push(formatDistance(a.distance));
+        if (a.icu_training_load) parts.push(`${Math.round(a.icu_training_load)} TSS`);
+        ctx += `- ${parts.join(" | ")}\n`;
+      }
+    }
+    if (eventsData.length > 0) {
+      ctx += "Planlagt denne og neste uke:\n";
+      for (const e of eventsData.slice(0, 7)) {
+        const parts = [formatDate(e.start_date_local), e.type, e.name];
+        if (e.moving_time) parts.push(formatTime(e.moving_time));
+        if (e.icu_training_load) parts.push(`${Math.round(e.icu_training_load)} TSS`);
+        ctx += `- ${parts.join(" | ")}\n`;
+      }
+    }
+    return ctx;
+  }
 
   let userPrompt: string;
   if (customPrompt) {
-    userPrompt = customPrompt;
+    // customPrompt already contains the workout description — prepend week context so KI can make informed suggestions
+    userPrompt = `${buildWeekContext()}\n${customPrompt}`;
   } else {
     const promptFn = QUICK_PROMPTS[action];
     if (!promptFn) {

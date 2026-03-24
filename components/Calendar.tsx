@@ -232,11 +232,15 @@ function TooltipPortal({ detail, eventDate, eventId, athleteSlug, color, anchorX
     const config = typeof window !== 'undefined' ? (() => { try { return JSON.parse(localStorage.getItem('user-config') ?? '{}'); } catch { return {}; } })() : {};
     const isPreset = config.mode === 'preset';
 
+    const sport = detail.type;
+    const desc = detail.description ?? `- ${editDur || 60}m rolig`;
+    const suffix = `\n\nSport: ${sport}\nNåværende øktbeskrivelse:\n${desc}\n\nBruk workout-builder-syntaks tilpasset sporten og utøverens intensitetssoner. Returner BARE den oppdaterte workout-builder-teksten, ingen forklaring, ingen markdown.`;
+
     const actionPrompts: Record<string, string> = {
-      'add-intervals': `Legg til en intervallblokk i denne øktbeskrivelsen. Behold eksisterende oppvarming og nedkjøling. Returner BARE den oppdaterte workout-builder-teksten, ingen annen tekst:\n\n${detail.description ?? ''}`,
-      'more-intervals': `Legg til én ekstra repetisjonsrunde i alle intervallblokker i denne øktbeskrivelsen (f.eks. 4x → 5x). Returner BARE den oppdaterte workout-builder-teksten, ingen annen tekst:\n\n${detail.description ?? ''}`,
-      'longer-blocks': `Øk varigheten på hvert intervall i alle intervallblokker med ca. 20% (rund til nærmeste hele minutt eller 30 sek). Returner BARE den oppdaterte workout-builder-teksten, ingen annen tekst:\n\n${detail.description ?? ''}`,
-      'extend': `Utvid denne øktbeskrivelsen ved å legge til 15–20 minutter ekstra rolig arbeid (tilpasset sport). Behold eksisterende struktur. Returner BARE den oppdaterte workout-builder-teksten, ingen annen tekst:\n\n${detail.description ?? `- ${editDur ?? 60}m rolig`}`,
+      'add-intervals': `Analyser ukesplanen og dagsformen ovenfor. Legg til én intervallblokk i økten som passer treningsbelastningen denne uka (f.eks. ikke for hard om TSB er lav). Velg antall repetisjoner, varighet og intensitet basert på sport og uke. Behold eksisterende oppvarming og nedkjøling.${suffix}`,
+      'more-intervals': `Analyser ukesplanen og dagsformen ovenfor. Legg til én ekstra repetisjonsrunde i intervallblokkene om belastningen denne uka tillater det. Juster intensitet om nødvendig.${suffix}`,
+      'longer-blocks': `Analyser ukesplanen og dagsformen ovenfor. Øk varigheten på hvert intervall med ca. 20% om den totale ukesbelastningen tillater det. Rund til nærmeste hele minutt eller 30 sek.${suffix}`,
+      'extend': `Analyser ukesplanen og dagsformen ovenfor. Forleng økten med 15–20 minutter rolig arbeid (tilpasset sport og intensitetssoner) om belastningen denne uka tillater det. Behold eksisterende struktur.${suffix}`,
     };
 
     const body = isPreset
@@ -315,7 +319,7 @@ function TooltipPortal({ detail, eventDate, eventId, athleteSlug, color, anchorX
             <div style={{ color: 'var(--text-subtle)', fontSize: 9, marginBottom: 2 }}>Navn</div>
             <input style={inputStyle} value={editName} onChange={e => setEditName(e.target.value)} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.8fr', gap: 6, alignItems: 'end' }}>
             <div>
               <div style={{ color: 'var(--text-subtle)', fontSize: 9, marginBottom: 2 }}>Dato</div>
               <input style={inputStyle} type="date" value={editDate} onChange={e => setEditDate(e.target.value)} />

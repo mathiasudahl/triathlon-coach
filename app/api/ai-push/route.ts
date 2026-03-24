@@ -16,8 +16,8 @@ export async function POST(req: NextRequest) {
     mode,
   } = body;
 
-  if (mode !== "week" && mode !== "month") {
-    return NextResponse.json({ error: "mode must be week or month" }, { status: 400 });
+  if (mode !== "week" && mode !== "month" && mode !== "current_week") {
+    return NextResponse.json({ error: "mode must be week, current_week or month" }, { status: 400 });
   }
 
   let athleteId: string;
@@ -58,7 +58,18 @@ export async function POST(req: NextRequest) {
   let startDate: string;
   let endDate: string;
 
-  if (mode === "week") {
+  if (mode === "current_week") {
+    // Current Monday–Sunday (rest of this week from today)
+    const dayOfWeek = now.getDay(); // 0=Sun
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const thisMonday = new Date(now);
+    thisMonday.setDate(now.getDate() - daysFromMonday);
+    const thisSunday = new Date(thisMonday);
+    thisSunday.setDate(thisMonday.getDate() + 6);
+    startDate = now.toISOString().slice(0, 10); // start from today (don't overwrite past days)
+    endDate = thisSunday.toISOString().slice(0, 10);
+    periodLabel = `denne uken (${startDate} – ${endDate})`;
+  } else if (mode === "week") {
     // Next Monday–Sunday
     const dayOfWeek = now.getDay(); // 0=Sun
     const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;

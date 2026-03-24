@@ -19,6 +19,7 @@ interface AddToIntervalsButtonProps {
 
 export function AddToIntervalsButton({ workout, athleteSlug, athleteId, apiKey, color, onAdded }: AddToIntervalsButtonProps) {
   const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function add() {
@@ -42,6 +43,7 @@ export function AddToIntervalsButton({ workout, athleteSlug, athleteId, apiKey, 
       const dateStr = created.start_date_local ?? workout.start_date_local ?? "";
       const date = dateStr.slice(0, 10);
       const resolvedAthleteId = athleteId ?? PRESET_ATHLETE_IDS[athleteSlug] ?? athleteSlug;
+      setDone(true);
       onAdded(`https://intervals.icu/athlete/${resolvedAthleteId}/activities?w=${date}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ukjent feil");
@@ -53,15 +55,15 @@ export function AddToIntervalsButton({ workout, athleteSlug, athleteId, apiKey, 
     <div className="inline-flex items-center gap-2">
       <button
         onClick={add}
-        disabled={loading}
+        disabled={loading || done}
         className="text-xs px-3 py-1 rounded-lg font-medium transition-colors disabled:opacity-50"
         style={{
-          backgroundColor: `${color}15`,
+          backgroundColor: done ? `${color}25` : `${color}15`,
           color,
           border: `1px solid ${color}30`,
         }}
       >
-        {loading ? "Legger til..." : "Legg til i Intervals"}
+        {done ? "✓ Lagt til" : loading ? "Legger til..." : "Legg til i Intervals"}
       </button>
       {error && <span className="text-xs" style={{ color: "#dc2626" }}>{error}</span>}
     </div>
