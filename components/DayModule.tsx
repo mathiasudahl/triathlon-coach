@@ -554,7 +554,7 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
                 className="opacity-30 hover:opacity-70 transition-opacity disabled:opacity-20"
                 style={{ fontSize: 9, color: 'var(--text-subtle)', letterSpacing: '0.04em' }}
               >
-                {pushLoading ? '↑ genererer...' : '↑ Fyll inn denne uken'}
+                {pushLoading ? '↑ genererer...' : '↑ Generer plan: denne uken'}
               </button>
               <button
                 onClick={() => handleAiPush('week')}
