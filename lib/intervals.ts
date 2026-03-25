@@ -121,7 +121,7 @@ export async function deleteEvent(
 export async function fetchActivityStreams(
   athleteId: string,
   apiKey: string,
-  activityId: number,
+  activityId: string,
   types: string[] = ["heartrate", "watts"]
 ): Promise<Record<string, number[]>> {
   const params = new URLSearchParams({ types: types.join(",") });

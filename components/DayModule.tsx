@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Activity, WorkoutEvent, DailyAnalysis, WeatherData, UserConfig } from '@/lib/types';
 import { AddToIntervalsButton } from '@/components/ai/AddToIntervalsButton';
+import { getAllEFTrends, type EFTrend } from '@/lib/efficiency';
 
 // ─── Cache helpers ────────────────────────────────────────────────────────────
 
@@ -42,12 +43,12 @@ function saveCache(a: DailyAnalysis) {
   if (typeof window === 'undefined') return;
   localStorage.setItem(cacheKey(a.athleteSlug, a.date), JSON.stringify(a));
 }
-function getStoredActivityIds(slug: string): number[] {
+function getStoredActivityIds(slug: string): string[] {
   if (typeof window === 'undefined') return [];
   try { return JSON.parse(localStorage.getItem(activityIdsKey(slug)) ?? '[]'); }
   catch { return []; }
 }
-function saveActivityIds(slug: string, ids: number[]) {
+function saveActivityIds(slug: string, ids: string[]) {
   if (typeof window === 'undefined') return;
   localStorage.setItem(activityIdsKey(slug), JSON.stringify(ids));
 }
@@ -77,6 +78,94 @@ function symbolToEmoji(symbol: string): string {
 function fmtDur(s: number) {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
   return h > 0 ? `${h}t${m > 0 ? ` ${m}m` : ''}` : `${m}m`;
+}
+
+// ─── EF Module ────────────────────────────────────────────────────────────────
+
+function fmtWeek(isoDate: string): string {
+  const months = ['jan','feb','mar','apr','mai','jun','jul','aug','sep','okt','nov','des'];
+  const [, m, d] = isoDate.split('-').map(Number);
+  return `${d}. ${months[m - 1]}`;
+}
+
+function fmtDateRange(isoRange: string): string {
+  // "2026-02-09–2026-02-23" — if same start and end (1-week block), show just one date
+  const [from, to] = isoRange.split('–');
+  if (!from || !to) return isoRange;
+  if (from === to) return `uke ${fmtWeek(from)}`;
+  const months = ['jan','feb','mar','apr','mai','jun','jul','aug','sep','okt','nov','des'];
+  const [, fm, fd] = from.split('-').map(Number);
+  const [, tm, td] = to.split('-').map(Number);
+  if (fm === tm) return `${fd}.–${td}. ${months[fm - 1]}`;
+  return `${fd}. ${months[fm - 1]}–${td}. ${months[tm - 1]}`;
+}
+
+function EFTrendRow({ trend, color }: { trend: EFTrend; color: string }) {
+  const up = trend.changePercent >= 0;
+  const pct = Math.abs(trend.changePercent).toFixed(1);
+  const sportLabel = trend.sport === 'Ride' ? 'Sykkel' : trend.sport === 'Run' ? 'Løp' : 'Svøm';
+  const arrow = up ? '↑' : '↓';
+  const changeColor = up ? color : '#ef4444';
+  const recentFmt = fmtDateRange(trend.recentLabel);
+  const priorFmt = fmtDateRange(trend.priorLabel);
+  const validityIcon = trend.validity === 'god' ? '✓' : trend.validity === 'usikker' ? '~' : '⚠';
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-1">
+        <span className="uppercase tracking-wider opacity-40 truncate" style={{ fontSize: 9 }}>
+          {sportLabel}: {trend.groupLabel}
+        </span>
+        <span className="font-semibold flex-shrink-0" style={{ color: changeColor, fontSize: 13 }}>
+          {arrow} {up ? '+' : '−'}{pct}%
+        </span>
+      </div>
+      <p className="opacity-45 mt-0.5" style={{ fontSize: 9 }}>
+        EF {trend.baselineEF.toFixed(2)} → {trend.currentWeekEF.toFixed(2)} · {priorFmt} → {recentFmt}
+      </p>
+      <p className="opacity-30 mt-0.5" style={{ fontSize: 9 }}>
+        {validityIcon} {trend.validityNote}
+      </p>
+    </div>
+  );
+}
+
+function EFModule({ activities, color }: { activities: Activity[]; color: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const trends = getAllEFTrends(activities);
+  if (trends.length === 0) return null;
+
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-baseline justify-between gap-1 w-full text-left hover:opacity-80 transition-opacity"
+      >
+        <span className="uppercase tracking-wider opacity-40" style={{ fontSize: 9 }}>
+          Prestasjon <span style={{ fontSize: 12 }}>{expanded ? '▾' : '▸'}</span>
+        </span>
+        <span className="opacity-40" style={{ fontSize: 9 }}>
+          {trends.map((t, i) => {
+            const up = t.changePercent >= 0;
+            const sport = t.sport === 'Ride' ? 'Sykkel' : t.sport === 'Run' ? 'Løp' : 'Svøm';
+            return (
+              <span key={t.sport}>
+                {i > 0 && ' · '}
+                {up ? '↑' : '↓'} {sport} {up ? '+' : '−'}{Math.abs(t.changePercent).toFixed(1)}%
+              </span>
+            );
+          })}
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-1.5 space-y-2">
+          {trends.map((trend) => (
+            <EFTrendRow key={trend.sport} trend={trend} color={color} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -192,6 +281,7 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
   const todayEvents = events.filter((e) => e.start_date_local.slice(0, 10) === today);
   const todayActivities = activities.filter((a) => a.start_date_local.slice(0, 10) === today);
   const yesterdayActs = activities.filter((a) => a.start_date_local.slice(0, 10) === yesterday);
+  const nextEvent = events.find((e) => e.start_date_local.slice(0, 10) > today) ?? null;
 
   function buildApiBody(extra: Record<string, unknown> = {}) {
     if (athlete.slug === 'mathias' || athlete.slug === 'karoline') {
@@ -234,15 +324,7 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
   useEffect(() => {
     if (!athlete.hasAI) return;
     const cached = loadCached(athlete.slug);
-    if (cached) {
-      setAnalysis(cached);
-      const storedIds = getStoredActivityIds(athlete.slug);
-      const hasNew = activities.some((a) => !storedIds.includes(a.id));
-      if (hasNew) runAnalysis(false);
-      return;
-    }
-    if (!isAfter06()) return;
-    runAnalysis(false);
+    if (cached) setAnalysis(cached);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -335,14 +417,6 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
       >
         <div className="flex items-center gap-2">
           <span className="font-semibold text-sm" style={{ color }}>{athlete.name}</span>
-          {analysis?.weekType && (
-            <span
-              className="text-xs px-2 py-0.5 rounded-full"
-              style={{ backgroundColor: `${color}15`, color: `${color}cc` }}
-            >
-              {analysis.weekTypeSource === 'ai' ? `Anbefalt: ${analysis.weekType}` : analysis.weekType}
-            </span>
-          )}
         </div>
         {weather && (
           <span className="text-xs opacity-60 tabular-nums">
@@ -355,14 +429,14 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
       <div className="flex flex-col flex-1 px-3 py-3 gap-2 text-xs">
 
         {/* I GÅR */}
-        <div>
+        <div style={{ minHeight: 48 }}>
           <span className="uppercase tracking-wider opacity-40" style={{ fontSize: 9 }}>I går</span>
           {yesterdayActs.length > 0 ? (
             <ul className="mt-0.5 space-y-0.5">
               {yesterdayActs.map((a, i) => (
                 <li key={i} className="flex items-center gap-1 opacity-65">
                   <span className="flex-shrink-0">{sportIcon(a.type)}</span>
-                  <span className="truncate">{a.name}</span>
+                  <span className="truncate font-medium" style={{ color }}>✓ {a.name}</span>
                   <span className="opacity-60 flex-shrink-0">· {fmtDur(a.moving_time)}</span>
                   {a.icu_training_load != null && (
                     <span className="opacity-60 flex-shrink-0">· {Math.round(a.icu_training_load)} TSS</span>
@@ -376,66 +450,81 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
         </div>
 
         {/* I DAG */}
-        <div>
+        <div style={{ minHeight: 48 }}>
           <span className="uppercase tracking-wider opacity-40" style={{ fontSize: 9 }}>I dag</span>
-          {todayActivities.length > 0 ? (
-            // Gjennomførte økter i dag
-            <ul className="mt-0.5 space-y-1">
-              {todayActivities.map((a, i) => (
-                <li key={i}>
-                  <div className="flex items-center gap-1">
-                    <span className="flex-shrink-0">{sportIcon(a.type)}</span>
-                    <span className="truncate font-medium" style={{ color }}>✓ {a.name}</span>
-                    <span className="opacity-50 flex-shrink-0">· {fmtDur(a.moving_time)}</span>
-                    {a.icu_training_load != null && (
-                      <span className="opacity-50 flex-shrink-0">· {Math.round(a.icu_training_load)} TSS</span>
-                    )}
-                    {athlete.hasAI && (analysis?.activitySummary || loading) && (
-                      <button
-                        onClick={() => setTodaySummaryExpanded((v) => !v)}
-                        className="flex-shrink-0 opacity-40 hover:opacity-80 transition-opacity ml-1"
-                        style={{ color }}
-                      >
-                        {todaySummaryExpanded ? '▴' : '▾'}
-                      </button>
+          <ul className="mt-0.5 space-y-1">
+            {todayActivities.map((a, i) => (
+              <li key={i}>
+                <div className="flex items-center gap-1">
+                  <span className="flex-shrink-0">{sportIcon(a.type)}</span>
+                  <span className="truncate font-medium" style={{ color }}>✓ {a.name}</span>
+                  <span className="opacity-50 flex-shrink-0">· {fmtDur(a.moving_time)}</span>
+                  {a.icu_training_load != null && (
+                    <span className="opacity-50 flex-shrink-0">· {Math.round(a.icu_training_load)} TSS</span>
+                  )}
+                  {athlete.hasAI && (analysis?.activitySummary || loading) && (
+                    <button
+                      onClick={() => setTodaySummaryExpanded((v) => !v)}
+                      className="flex-shrink-0 opacity-40 hover:opacity-80 transition-opacity ml-1"
+                      style={{ color }}
+                    >
+                      {todaySummaryExpanded ? '▴' : '▾'}
+                    </button>
+                  )}
+                </div>
+                {todaySummaryExpanded && (
+                  <div className="mt-1 pl-4 space-y-1">
+                    {loading && <p className="opacity-40 animate-pulse">Henter oppsummering...</p>}
+                    {analysis?.activitySummary && !loading && (
+                      <>
+                        <p className="opacity-75 leading-snug">{analysis.activitySummary}</p>
+                        {analysis.nutritionAdvice && (
+                          <p className="opacity-60 leading-snug">🍽️ {analysis.nutritionAdvice}</p>
+                        )}
+                      </>
                     )}
                   </div>
-                  {todaySummaryExpanded && (
-                    <div className="mt-1 pl-4 space-y-1">
-                      {loading && <p className="opacity-40 animate-pulse">Henter oppsummering...</p>}
-                      {analysis?.activitySummary && !loading && (
-                        <>
-                          <p className="opacity-75 leading-snug">{analysis.activitySummary}</p>
-                          {analysis.nutritionAdvice && (
-                            <p className="opacity-60 leading-snug">🍽️ {analysis.nutritionAdvice}</p>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : todayEvents.length > 0 ? (
-            // Planlagte, ikke gjennomført
-            <ul className="mt-0.5 space-y-0.5">
-              {todayEvents.map((e, i) => (
-                <li key={i} className="flex items-center gap-1">
-                  <span className="flex-shrink-0">{sportIcon(e.type)}</span>
-                  <span className="truncate font-medium">{e.name}</span>
-                  {e.moving_time && (
-                    <span className="opacity-50 flex-shrink-0">· {fmtDur(e.moving_time)}</span>
-                  )}
-                  {e.icu_training_load != null && (
-                    <span className="opacity-50 flex-shrink-0">· {Math.round(e.icu_training_load)} TSS</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-0.5 opacity-40">Hviledag</p>
-          )}
+                )}
+              </li>
+            ))}
+            {todayEvents.filter((e) => !todayActivities.some((a) => a.type === e.type)).map((e, i) => (
+              <li key={`ev-${i}`} className="flex items-center gap-1 opacity-60">
+                <span className="flex-shrink-0">{sportIcon(e.type)}</span>
+                <span className="truncate">{e.name}</span>
+                {e.moving_time && (
+                  <span className="opacity-60 flex-shrink-0">· {fmtDur(e.moving_time)}</span>
+                )}
+                {e.icu_training_load != null && (
+                  <span className="opacity-60 flex-shrink-0">· {Math.round(e.icu_training_load)} TSS</span>
+                )}
+              </li>
+            ))}
+            {todayActivities.length === 0 && todayEvents.length === 0 && (
+              <li className="opacity-40">Hviledag</li>
+            )}
+          </ul>
         </div>
+
+        {/* NESTE ØKT */}
+        <div style={{ minHeight: 36 }}>
+          {nextEvent && (<>
+            <span className="uppercase tracking-wider opacity-40" style={{ fontSize: 9 }}>Neste økt</span>
+            <div className="mt-0.5 flex items-center gap-1 opacity-55">
+              <span className="flex-shrink-0">{sportIcon(nextEvent.type)}</span>
+              <span className="truncate">{nextEvent.name}</span>
+              {nextEvent.moving_time && (
+                <span className="opacity-60 flex-shrink-0">· {fmtDur(nextEvent.moving_time)}</span>
+              )}
+              {nextEvent.icu_training_load != null && (
+                <span className="opacity-60 flex-shrink-0">· {Math.round(nextEvent.icu_training_load)} TSS</span>
+              )}
+              <span className="opacity-50 flex-shrink-0">· {fmtWeek(nextEvent.start_date_local.slice(0, 10))}</span>
+            </div>
+          </>)}
+        </div>
+
+        {/* Prestasjonsmodul — Efficiency Factor */}
+        <EFModule activities={activities} color={color} />
 
         {/* Mangler AI-nøkkel */}
         {!athlete.hasAI && (
@@ -445,20 +534,30 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
         )}
 
         {/* AI analyse */}
-        {athlete.hasAI && (analysis || loading) && (
-          <div className="flex flex-col gap-1.5">
+        {athlete.hasAI && (
+          <div>
             <button
-              onClick={() => setExpanded((v) => !v)}
-              className="flex items-center gap-1.5 text-left opacity-60 hover:opacity-100 transition-opacity py-1 w-full"
+              onClick={() => {
+                if (!expanded && !analysis) runAnalysis(false);
+                setExpanded((v) => !v);
+              }}
+              className="flex items-baseline justify-between gap-1 w-full text-left hover:opacity-80 transition-opacity"
             >
-              <span style={{ color, fontSize: 14, lineHeight: 1 }}>{expanded ? '▾' : '▸'}</span>
-              <span style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                {loading ? 'Analyserer...' : 'Formstatus'}
+              <span className="uppercase tracking-wider opacity-40" style={{ fontSize: 9 }}>
+                Formstatus <span style={{ fontSize: 12 }}>{expanded ? '▾' : '▸'}</span>
               </span>
+              {analysis?.weekType && (
+                <span className="opacity-40 truncate" style={{ fontSize: 9 }}>
+                  {analysis.weekTypeSource === 'ai' ? `Anbefalt: ${analysis.weekType}` : analysis.weekType}
+                </span>
+              )}
+              {loading && !analysis && (
+                <span className="opacity-30 animate-pulse" style={{ fontSize: 9 }}>analyserer...</span>
+              )}
             </button>
 
             {expanded && !loading && analysis && (
-              <div className="space-y-1.5">
+              <div className="mt-1.5 space-y-1.5">
                 <p className="opacity-65 leading-snug">{analysis.summary}</p>
                 {analysis.weatherNote && (
                   <p className="opacity-65 leading-snug">🌧️ {analysis.weatherNote}</p>
@@ -488,7 +587,7 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
             )}
 
             {loading && expanded && (
-              <div className="animate-pulse opacity-40 leading-snug">Henter analyse...</div>
+              <div className="mt-1.5 animate-pulse opacity-40 leading-snug">Henter analyse...</div>
             )}
           </div>
         )}
@@ -512,17 +611,6 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
 
         {/* Bunn: knapper */}
         <div className="flex flex-wrap items-center gap-2">
-          {athlete.hasAI && (
-            <button
-              onClick={() => runAnalysis(true)}
-              disabled={loading}
-              className="opacity-30 hover:opacity-70 transition-opacity disabled:opacity-20"
-              style={{ fontSize: 9, color: 'var(--text-subtle)', letterSpacing: '0.04em' }}
-            >
-              {loading ? '↻ analyserer...' : '↻ Analyser formstatus'}
-            </button>
-          )}
-
           {/* Program-push (Mathias-stil) */}
           {athlete.hasProgram && (
             <>

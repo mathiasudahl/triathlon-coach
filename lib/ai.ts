@@ -3,6 +3,7 @@ import type { Activity, WorkoutEvent, Wellness, WeatherData } from "./types";
 import { formatDate, formatTime, formatDistance, today, daysAgo } from "./date-utils";
 import { MATHIAS_PROGRAM } from "./programs/parse-program";
 import { getCurrentProgramWeek, buildProgramSummary } from "./programs/program-utils";
+import { formatEFTrendForPrompt } from "./efficiency";
 
 export function buildProgramContext(athleteSlug: string): string {
   if (athleteSlug !== "mathias") return "";
@@ -175,7 +176,7 @@ export function buildDailyAnalysisPrompt(
   futureEvents: WorkoutEvent[],
   wellness: Wellness[],
   weather: WeatherData | null,
-  recentStreams?: { activityId: number; streams: Record<string, number[]> }
+  recentStreams?: { activityId: string; streams: Record<string, number[]> }
 ): string {
   const todayStr = today();
   const yesterdayStr = daysAgo(1);
@@ -344,10 +345,15 @@ Dato i dag: ${todayStr}
     prompt += `\nVær i dag: ${weather.temperature}°C, vind ${weather.windspeed} m/s, symbol ${weather.symbol}\n`;
   }
 
+  const efTrend = formatEFTrendForPrompt(activities);
+  if (efTrend) {
+    prompt += `\n${efTrend}\n`;
+  }
+
   prompt += `
 Instruksjoner:
 1. weekType: Bruk programfasen direkte fra konteksten om tilgjengelig (f.eks. "Build 1: Restitusjon"). For andre: anbefal ukestype basert på formstatus (CTL/ATL/TSB-trend) — ikke bare hva som er planlagt. F.eks. "Restitusjon" om TSB er svært negativ og ATL høy, "Belastning" om TSB er positiv og CTL kan økes. Aldri tom streng — alltid 1–4 ord. weekTypeSource: sett "program" om programkontekst ble brukt, ellers "ai".
-2. summary: Vurder formtrend over siste 4–8 uker basert på CTL/ATL/TSB-historikken. Er formen stigende, på platå, eller fallende? Passer planlagte økter neste 2 uker med formstatus — er det for mye eller for lite? Vær konkret og streng som en krevende trener. Maks 3 setninger. Ingen motivasjonsfraser.
+2. summary: Vurder formtrend over siste 4–8 uker basert på CTL/ATL/TSB-historikken OG Efficiency Factor-trenden om tilgjengelig. Stigende EF indikerer reell prestasjonsform uavhengig av belastningsmål. Er formen stigende, platå, eller fallende? Passer planlagte økter neste 2 uker? Vær faktabasert og direkte — ikke moraliserende. Når du omtaler ukens gjennomføring, ta hensyn til at det er ${new Date().toLocaleDateString('no', { weekday: 'long' })} — sammenlign kun gjennomførte økter med hva som er forventet til og med i dag, ikke hele uken. Maks 3 setninger. Ingen motivasjonsfraser.
 3. nutritionAdvice: Fyll ut KUN om det er gjennomført økt i dag eller i går — ett konkret kostholdsråd knyttet til den spesifikke økttypen. Null ellers.
 4. weatherNote: Bare hvis regnvær treffer planlagt løpeøkt (Run), ELLER sterk vind (>10 m/s) treffer planlagt utendørs rolig sykkeltur (ikke intervaller/terskel). Watt-baserte treninger påvirkes ikke av vind. Null ellers.
 5. adaptWeek: Sett true BARE om gjennomført økt avvek >20% fra planlagt TSS. Hviledag = false.

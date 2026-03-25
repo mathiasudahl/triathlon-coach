@@ -451,10 +451,23 @@ function TooltipPortal({ detail, eventDate, eventId, athleteSlug, color, anchorX
 
 // ─── Chip ─────────────────────────────────────────────────────────────────────
 
-const CELL_HEIGHT = 52;
+const CELL_HEIGHT = 64;
 
-function Chip({ chip, color, date, onDelete, onRefresh }: {
-  chip: WorkoutChip; color: string; date: string;
+// ─── Birthdays ────────────────────────────────────────────────────────────────
+
+const BIRTHDAYS: { month: number; day: number; name: string; color: string }[] = [
+  { month: 3, day: 26, name: 'Karoline', color: '#2563eb' },
+  { month: 7, day: 20, name: 'Mathias', color: '#16a34a' },
+];
+
+function getBirthday(date: Date): { name: string; color: string } | null {
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  return BIRTHDAYS.find((b) => b.month === m && b.day === d) ?? null;
+}
+
+function Chip({ chip, color, date, past, onDelete, onRefresh }: {
+  chip: WorkoutChip; color: string; date: string; past?: boolean;
   onDelete: (eventId: number, athleteSlug: 'mathias' | 'karoline') => void;
   onRefresh: () => void;
 }) {
@@ -548,33 +561,33 @@ function Chip({ chip, color, date, onDelete, onRefresh }: {
         borderRadius: 6, paddingLeft: 6, paddingRight: 6, paddingTop: 4, paddingBottom: 4,
         height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start',
         cursor: canEdit ? 'grab' : 'default',
-        backgroundColor: chip.preview ? 'transparent' : chip.done ? `${color}18` : `${color}0d`,
-        borderLeft: `2px ${chip.preview ? 'dashed' : 'solid'} ${chip.done ? color : color + '55'}`,
-        opacity: chip.preview ? 0.75 : 1,
+        backgroundColor: chip.preview ? 'transparent' : chip.done ? `${color}18` : past && !chip.done ? 'var(--border)' : `${color}0d`,
+        borderLeft: `2px ${chip.preview ? 'dashed' : 'solid'} ${chip.done ? color : past && !chip.done ? 'var(--text-subtle)' : color + '55'}`,
+        opacity: chip.preview ? 0.75 : past && !chip.done ? 0.45 : 1,
         outline: chip.preview ? `1px dashed ${color}35` : undefined,
         transition: 'filter 0.1s',
         filter: open && canEdit ? 'brightness(1.05)' : undefined,
       }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 2, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
           {chip.offlineLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src="/offline-logo.png" alt="" style={{ width: 13, marginTop: 1, flexShrink: 0, opacity: 0.5, filter: 'sepia(1) saturate(0.5) hue-rotate(75deg) brightness(0.4)' }} />
+            <img src="/offline-logo.png" alt="" style={{ width: 12, flexShrink: 0, opacity: 0.5, filter: 'sepia(1) saturate(0.5) hue-rotate(75deg) brightness(0.4)' }} />
           ) : (
-            <span style={{ fontSize: 10, flexShrink: 0, lineHeight: 1.4 }}>{chip.icon}</span>
+            <span style={{ fontSize: 11, flexShrink: 0, lineHeight: 1 }}>{chip.icon}</span>
           )}
-          <span style={{
-            fontSize: 10, lineHeight: 1.3, fontWeight: 500,
-            color: chip.done ? color : chip.preview ? color : 'var(--text)',
-            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-          }}>
-            {chip.preview ? `✦ ${chip.name}` : chip.name}
-          </span>
+          {chip.meta && (
+            <span style={{ color: 'var(--text-subtle)', fontSize: 9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {chip.meta}
+            </span>
+          )}
         </div>
-        {chip.meta && (
-          <div style={{ color: 'var(--text-subtle)', fontSize: 9, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {chip.meta}
-          </div>
-        )}
+        <div style={{
+          fontSize: 10, lineHeight: 1.3, fontWeight: 500, marginTop: 2,
+          color: chip.done ? color : chip.preview ? color : 'var(--text)',
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+        }}>
+          {chip.preview ? `✦ ${chip.name}` : chip.done ? `✓ ${chip.name}` : chip.name}
+        </div>
         {/* Drag hint */}
         {canEdit && open && (
           <div style={{ position: 'absolute', top: 3, right: 3, fontSize: 8, color: `${color}80`, lineHeight: 1, pointerEvents: 'none', userSelect: 'none' }}>
@@ -628,6 +641,7 @@ function DayCol({ date, chips, color, isWeekStart, weather, showWeather, onRefre
   const today = isToday(date);
   const past = isBefore(date, startOfDay(new Date())) && !today;
   const dayOfWeek = (date.getDay() + 6) % 7;
+  const birthday = getBirthday(date);
   const [dragOver, setDragOver] = useState(false);
   const [moving, setMoving] = useState(false);
   const slots = Array.from({ length: Math.max(SLOTS, chips.length) });
@@ -671,10 +685,14 @@ function DayCol({ date, chips, color, isWeekStart, weather, showWeather, onRefre
     <div
       className="flex flex-col"
       style={{
-        borderLeft: isWeekStart ? '2px solid var(--border)' : '1px solid var(--border)',
-        backgroundColor: dragOver ? `${color}10` : today ? `${color}06` : 'transparent',
-        outline: dragOver ? `2px dashed ${color}60` : undefined,
-        outlineOffset: -2,
+        borderLeft: birthday ? `2px solid ${birthday.color}60` : isWeekStart ? '2px solid var(--border)' : '1px solid var(--border)',
+        background: dragOver ? `${color}10`
+          : birthday ? `linear-gradient(160deg, ${birthday.color}12 0%, ${birthday.color}06 60%, transparent 100%)`
+          : today ? `${color}06`
+          : past ? 'rgba(0,0,0,0.03)'
+          : 'transparent',
+        outline: dragOver ? `2px dashed ${color}60` : birthday ? `1px solid ${birthday.color}25` : undefined,
+        outlineOffset: birthday ? -1 : -2,
         transition: 'background-color 0.1s',
       }}
       onDragOver={handleDragOver}
@@ -684,16 +702,35 @@ function DayCol({ date, chips, color, isWeekStart, weather, showWeather, onRefre
       {/* Header — fixed height so both athlete rows are identical */}
       <div
         className="px-2 py-1.5 text-center border-b flex-shrink-0"
-        style={{ borderColor: 'var(--border)', backgroundColor: today ? `${color}10` : 'transparent', height: 52 }}
+        style={{
+          borderColor: birthday ? `${birthday.color}40` : 'var(--border)',
+          backgroundColor: birthday
+            ? `${birthday.color}15`
+            : today ? `${color}10` : 'transparent',
+          height: 52,
+          position: 'relative',
+          overflow: 'hidden',
+        }}
       >
-        <div style={{ color: today ? color : 'var(--text-subtle)', fontSize: 10, fontWeight: 500 }}>
+        {birthday && (
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: `radial-gradient(ellipse at 50% 120%, ${birthday.color}22 0%, transparent 70%)`,
+            pointerEvents: 'none',
+          }} />
+        )}
+        <div style={{ color: birthday ? birthday.color : today ? color : 'var(--text-subtle)', fontSize: 10, fontWeight: 500, position: 'relative' }}>
           {DAY_SHORT[dayOfWeek]}
         </div>
-        <div style={{ color: today ? color : 'var(--text-subtle)', fontSize: 11, fontWeight: today ? 700 : 500 }}>
+        <div style={{ color: birthday ? birthday.color : today ? color : 'var(--text-subtle)', fontSize: 11, fontWeight: (today || !!birthday) ? 700 : 500, position: 'relative' }}>
           {format(date, 'd', { locale: nb })}
         </div>
-        <div style={{ fontSize: 9, color: 'var(--text-subtle)', marginTop: 1, lineHeight: 1.2, height: 13 }}>
-          {showWeather && weather && weather.temperature != null ? `${symbolToEmoji(weather.symbol)}${weather.temperature}°` : ''}
+        <div style={{ fontSize: 9, lineHeight: 1.2, height: 13, marginTop: 1, position: 'relative' }}>
+          {birthday
+            ? <span style={{ color: birthday.color, fontWeight: 600, letterSpacing: '0.02em' }}>🎂</span>
+            : showWeather && weather && weather.temperature != null
+              ? <span style={{ color: 'var(--text-subtle)' }}>{symbolToEmoji(weather.symbol)}{weather.temperature}°</span>
+              : null}
         </div>
       </div>
 
@@ -707,7 +744,7 @@ function DayCol({ date, chips, color, isWeekStart, weather, showWeather, onRefre
             </div>
           );
           return (
-            <Chip key={chip.eventId ?? `${chip.name}-${i}`} chip={chip} color={color} date={format(date, 'yyyy-MM-dd')} onDelete={handleDelete} onRefresh={onRefresh} />
+            <Chip key={chip.eventId ?? `${chip.name}-${i}`} chip={chip} color={color} date={format(date, 'yyyy-MM-dd')} past={past} onDelete={handleDelete} onRefresh={onRefresh} />
           );
         })}
         {/* Drop hint when dragging over empty area */}

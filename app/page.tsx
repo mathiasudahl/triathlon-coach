@@ -23,12 +23,12 @@ function daysFromNowStr(n: number) {
 }
 
 async function fetchAthleteDataPreset(slug: 'mathias' | 'karoline') {
-  const oldest = daysAgoStr(7);
+  const oldest = daysAgoStr(60);
   const newest = todayStr();
   const eventsNewest = daysFromNowStr(14);
 
   const [activitiesRes, eventsRes] = await Promise.allSettled([
-    fetch(`/api/intervals?athlete=${slug}&type=activities&oldest=${oldest}&newest=${newest}&limit=50`, { cache: 'no-store' }).then((r) => r.json()),
+    fetch(`/api/intervals?athlete=${slug}&type=activities&oldest=${oldest}&newest=${newest}&limit=60`, { cache: 'no-store' }).then((r) => r.json()),
     fetch(`/api/intervals?athlete=${slug}&type=events&oldest=${newest}&newest=${eventsNewest}`, { cache: 'no-store' }).then((r) => r.json()),
   ]);
 
@@ -39,12 +39,12 @@ async function fetchAthleteDataPreset(slug: 'mathias' | 'karoline') {
 }
 
 async function fetchAthleteDataCustom(config: UserConfig) {
-  const oldest = daysAgoStr(7);
+  const oldest = daysAgoStr(60);
   const newest = todayStr();
   const eventsNewest = daysFromNowStr(14);
 
   const [activitiesRes, eventsRes] = await Promise.allSettled([
-    fetch(`/api/intervals?athleteId=${encodeURIComponent(config.athleteId)}&apiKey=${encodeURIComponent(config.apiKey)}&type=activities&oldest=${oldest}&newest=${newest}&limit=50`, { cache: 'no-store' }).then((r) => r.json()),
+    fetch(`/api/intervals?athleteId=${encodeURIComponent(config.athleteId)}&apiKey=${encodeURIComponent(config.apiKey)}&type=activities&oldest=${oldest}&newest=${newest}&limit=60`, { cache: 'no-store' }).then((r) => r.json()),
     fetch(`/api/intervals?athleteId=${encodeURIComponent(config.athleteId)}&apiKey=${encodeURIComponent(config.apiKey)}&type=events&oldest=${newest}&newest=${eventsNewest}`, { cache: 'no-store' }).then((r) => r.json()),
   ]);
 

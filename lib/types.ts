@@ -66,7 +66,7 @@ export interface AthletePRs {
 }
 
 export interface Activity {
-  id: number;
+  id: string;
   start_date_local: string;
   type: string;
   name: string;
@@ -75,6 +75,7 @@ export interface Activity {
   icu_training_load?: number;
   average_heartrate?: number;
   average_watts?: number;
+  icu_average_watts?: number;
   total_elevation_gain?: number;
   icu_intensity?: number;
   indoor_workout?: boolean;
