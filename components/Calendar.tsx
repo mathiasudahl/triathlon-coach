@@ -743,12 +743,15 @@ function DayCol({ date, chips, color, isWeekStart, weather, showWeather, onRefre
           pointerEvents: 'none', overflow: 'hidden', zIndex: 0,
         }}>
           <div style={{
-            fontSize: 42, lineHeight: 1, opacity: 0.06,
-            transform: 'rotate(-35deg) translateY(8px)',
-            userSelect: 'none', color: birthday.color, fontWeight: 900,
-            letterSpacing: '-0.02em', whiteSpace: 'nowrap',
+            opacity: 0.08,
+            transform: 'rotate(-55deg) translateX(-8%) translateY(-15%)',
+            userSelect: 'none', color: birthday.color,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+            whiteSpace: 'nowrap',
           }}>
-            {birthday.name}
+            <span style={{ fontSize: 22, lineHeight: 1 }}>🎉</span>
+            <span style={{ fontSize: 16, fontWeight: 900, lineHeight: 1.3, letterSpacing: '0.01em' }}>{birthday.name}</span>
+            <span style={{ fontSize: 11, fontWeight: 900, lineHeight: 1.2, letterSpacing: '0.08em' }}>GRATULERER</span>
           </div>
         </div>
       )}
