@@ -114,6 +114,52 @@ function extractCodeBlock(text: string): string {
   return m ? m[1].trim() : "";
 }
 
+function parseWorkoutsFromTable(weekBlock: string): ProgramWorkout[] {
+  const workouts: ProgramWorkout[] = [];
+  // Match table rows: | Dag [AM/PM] | Økt navn | X min |
+  // Skips header row (| Dag |) and separator row (|---|)
+  const rowRegex = /^\|([^|]+)\|([^|]+)\|([^|]+)\|/gm;
+  let match: RegExpExecArray | null;
+  while ((match = rowRegex.exec(weekBlock)) !== null) {
+    const dayCell = match[1].trim();
+    const nameCell = match[2].trim();
+    const durCell = match[3].trim();
+
+    // Skip header/separator rows
+    if (dayCell === "Dag" || dayCell.startsWith("---") || nameCell.startsWith("---")) continue;
+    // Skip rest days
+    if (/^FRI$/i.test(nameCell) || nameCell === "—") continue;
+
+    const timeOfDay: "AM" | "PM" | null = /\bAM\b/i.test(dayCell) ? "AM" : /\bPM\b/i.test(dayCell) ? "PM" : null;
+    const dayName = dayCell.replace(/\s*(AM|PM)\s*/i, "").trim();
+
+    const dow = parseDayOfWeek(dayName);
+    if (dow === null) continue;
+
+    const type = inferSportType(nameCell);
+    if (!type) continue;
+
+    const durMatch = durCell.match(/(\d+)/);
+    const durationMinutes = durMatch ? +durMatch[1] : 60;
+
+    const optional = /VALGFRI/i.test(nameCell);
+    const indoor = inferIndoor(type, nameCell);
+
+    workouts.push({
+      dayOfWeek: dow,
+      timeOfDay,
+      type,
+      name: buildWorkoutName(nameCell, type),
+      durationMinutes,
+      tss: undefined,
+      description: "",
+      optional,
+      indoor,
+    });
+  }
+  return workouts;
+}
+
 function parseWorkoutsFromWeekBlock(weekBlock: string): ProgramWorkout[] {
   const workouts: ProgramWorkout[] = [];
 
@@ -132,6 +178,11 @@ function parseWorkoutsFromWeekBlock(weekBlock: string): ProgramWorkout[] {
       fullLine: match[0],
       duration: +match[4],
     });
+  }
+
+  // Fallback: parse from summary table if no bold headers found
+  if (headers.length === 0) {
+    return parseWorkoutsFromTable(weekBlock);
   }
 
   for (let i = 0; i < headers.length; i++) {
