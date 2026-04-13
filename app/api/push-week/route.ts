@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAthlete } from "@/lib/athletes";
 import { fetchEvents, createEvent } from "@/lib/intervals";
 import { MATHIAS_PROGRAM } from "@/lib/programs/parse-program";
-import { getNextProgramWeek, getWeeksInMonth } from "@/lib/programs/program-utils";
+import { getCurrentProgramWeek, getNextProgramWeek, getWeeksInMonth } from "@/lib/programs/program-utils";
 import type { ProgramWeek, ProgramWorkout } from "@/lib/types";
 
 function workoutDate(week: ProgramWeek, workout: ProgramWorkout): string {
@@ -19,8 +19,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { athleteSlug, mode, athleteId: directAthleteId, apiKey: directApiKey } = body;
 
-  if (mode !== "week" && mode !== "month") {
-    return NextResponse.json({ error: "mode must be week or month" }, { status: 400 });
+  if (mode !== "current_week" && mode !== "week" && mode !== "month") {
+    return NextResponse.json({ error: "mode must be current_week, week or month" }, { status: 400 });
   }
 
   // Only Mathias has a program file
@@ -44,7 +44,16 @@ export async function POST(req: NextRequest) {
   let weeks: ProgramWeek[];
   let weekLabels: string[];
 
-  if (mode === "week") {
+  if (mode === "current_week") {
+    const current = getCurrentProgramWeek(MATHIAS_PROGRAM, now);
+    if (!current) {
+      return NextResponse.json({ error: "Ingen inneværende uke funnet i programmet" }, { status: 404 });
+    }
+    weeks = [current];
+    const s = new Date(current.startDate + "T12:00:00");
+    const e = new Date(current.endDate + "T12:00:00");
+    weekLabels = [`Uke ${current.weekNumber} (${s.getDate()}.–${e.getDate()}. ${e.toLocaleString("nb-NO", { month: "long" })})`];
+  } else if (mode === "week") {
     const next = getNextProgramWeek(MATHIAS_PROGRAM, now);
     if (!next) {
       return NextResponse.json({ error: "Ingen neste uke funnet i programmet" }, { status: 404 });

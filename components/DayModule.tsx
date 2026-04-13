@@ -328,7 +328,7 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handlePush(mode: 'week' | 'month') {
+  async function handlePush(mode: 'current_week' | 'week' | 'month') {
     setPushLoading(true);
     setPushResult(null);
     try {
@@ -615,12 +615,20 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
           {athlete.hasProgram && (
             <>
               <button
+                onClick={() => handlePush('current_week')}
+                disabled={pushLoading}
+                className="opacity-30 hover:opacity-70 transition-opacity disabled:opacity-20"
+                style={{ fontSize: 9, color: 'var(--text-subtle)', letterSpacing: '0.04em' }}
+              >
+                {pushLoading ? '↑ pusher...' : '↑ Denne uken'}
+              </button>
+              <button
                 onClick={() => handlePush('week')}
                 disabled={pushLoading}
                 className="opacity-30 hover:opacity-70 transition-opacity disabled:opacity-20"
                 style={{ fontSize: 9, color: 'var(--text-subtle)', letterSpacing: '0.04em' }}
               >
-                {pushLoading ? '↑ pusher...' : '↑ Push uke'}
+                ↑ Neste uke
               </button>
               <button
                 onClick={() => handlePush('month')}
@@ -628,7 +636,7 @@ function AthletePanel({ athlete, activities, events, weather, onRefresh }: Athle
                 className="opacity-30 hover:opacity-70 transition-opacity disabled:opacity-20"
                 style={{ fontSize: 9, color: 'var(--text-subtle)', letterSpacing: '0.04em' }}
               >
-                ↑ Push måned
+                ↑ Denne måneden
               </button>
             </>
           )}
